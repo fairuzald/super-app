@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: GTK4 + libadwaita (Homebrew)
         run: |
           brew install gtk4 libadwaita pygobject3 librsvg adwaita-icon-theme openssl
