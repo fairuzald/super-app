@@ -1,12 +1,14 @@
 # PyInstaller spec for the Windows build. Run from an MSYS2 UCRT64 shell: packaging/windows/build.sh
 # Plugins ship as plain folders next to the exe (they're loaded from disk, like user add-ons).
 import os
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = Path(SPECPATH).resolve().parents[1]
 CORE, HUB = ROOT / "packages" / "core" / "src", ROOT / "packages" / "hub" / "src"
+sys.path[:0] = [str(CORE), str(HUB)]          # so collect_submodules can see our packages
 
 datas = [(str(HUB / "superapp_hub" / "assets"), "superapp_hub/assets")]
 for plugin in sorted((ROOT / "plugins").iterdir()):
