@@ -42,7 +42,7 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends ./dist/super-app_*_all.deb
           super-app --check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: super-app-deb
           path: dist/*.deb
