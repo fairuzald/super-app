@@ -1,0 +1,48 @@
+name: Windows build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ""
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-libadwaita
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-pyinstaller
+            mingw-w64-ucrt-x86_64-pyinstaller-hooks-contrib
+      - name: Build with PyInstaller and load all plugins
+        run: packaging/windows/build.sh
+      - name: Make the installer
+        shell: pwsh
+        run: |
+          $v = "${{ inputs.version }}"
+          if (-not $v) { $v = (Get-Content VERSION).Trim() }
+          $v = $v.TrimStart("v")
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y | Out-Null
+            $env:Path += ";${env:ProgramFiles(x86)}\Inno Setup 6"
+          }
+          iscc "/DAppVersion=$v" packaging\windows\installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: super-app-windows
+          path: dist/Super-App-Setup-*.exe

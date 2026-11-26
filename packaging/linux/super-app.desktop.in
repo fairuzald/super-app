@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Super App
+Comment=All your desktop tools in one place
+Exec=@EXEC@
+Icon=local.fairuz.SuperApp
+Terminal=false
+Categories=Utility;
+Keywords=tools;hub;phone;storage;clean;plugins;
+StartupWMClass=local.fairuz.SuperApp

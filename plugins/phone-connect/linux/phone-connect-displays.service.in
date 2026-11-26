@@ -1,0 +1,12 @@
+[Unit]
+Description=Phone Connect display keeper (laptop 100% scale, max refresh, remembered layouts)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/python3 "@PLUGIN@/app/displays.py"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

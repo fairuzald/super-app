@@ -1,0 +1,17 @@
+[project]
+name = "superapp-hub"
+version = "1.0.0"
+description = "Super App hub window (GTK4 + libadwaita)."
+requires-python = ">=3.11"
+# PyGObject comes from the OS (python3-gi on Debian/Ubuntu, MSYS2 on Windows): it needs the GTK libraries.
+dependencies = ["superapp-core"]
+
+[project.gui-scripts]
+super-app = "superapp_hub.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/superapp_hub"]

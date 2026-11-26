@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Storage Cleaner
+Comment=See what fills your disk and free space safely
+Exec=/usr/bin/python3 "@PLUGIN@/app/storage-cleaner.py"
+Icon=local.fairuz.StorageCleaner
+Terminal=false
+Categories=Utility;
+Keywords=disk;storage;clean;cache;trash;docker;node_modules;space;
+StartupWMClass=local.fairuz.StorageCleaner
+NoDisplay=true

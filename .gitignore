@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+uv.lock
+# test output
+plugins/*/tests/last-results.json
+plugins/*/tests/shots/

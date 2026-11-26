@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Phone Connect
+Comment=Mirror, control and share files with your Android phone over Wi-Fi
+Exec=/usr/bin/python3 "@PLUGIN@/app/phone-connect.py"
+Icon=local.fairuz.PhoneConnect
+Terminal=false
+Categories=Utility;
+Keywords=phone;android;mirror;scrcpy;webcam;tablet;
+StartupWMClass=local.fairuz.PhoneConnect
+NoDisplay=true

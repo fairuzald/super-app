@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: Core tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest ruff
+      - run: ruff check .
+      - run: python -m pytest -q
+
+  linux:
+    name: Linux package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK4 + libadwaita
+        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+      - name: Byte-compile everything (incl. the tool apps)
+        run: /usr/bin/python3 -m compileall -q packages plugins bin
+      - run: packaging/linux/build-deb.sh
+      - name: Install the .deb and load all plugins
+        run: |
+          sudo apt-get install -y --no-install-recommends ./dist/super-app_*_all.deb
+          super-app --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: super-app-deb
+          path: dist/*.deb
+
+  windows:
+    name: Windows installer
+    uses: ./.github/workflows/windows.yml

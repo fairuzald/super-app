@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: VERSION="${GITHUB_REF_NAME}" packaging/linux/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: super-app-deb
+          path: dist/*.deb
+
+  windows:
+    uses: ./.github/workflows/windows.yml
+    with:
+      version: ${{ github.ref_name }}
+
+  publish:
+    needs: [deb, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --generate-notes

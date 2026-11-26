@@ -1,0 +1,9 @@
+id = "disk-space"
+name = "Disk Space"
+version = "1.0.0"
+description = "How full your main drive is, on any OS. A small example of a card-only plugin."
+entry = "plugin.py:DiskSpacePlugin"
+platforms = ["linux", "windows", "macos"]
+default_on = ["windows", "macos"]   # Linux already has Storage Cleaner; switch it on in Plugins if you like
+color = "#34d399"
+order = 30

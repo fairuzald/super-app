@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#16161d">
+<title>Phone Connect · Companion</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --card2: #222630; --line: #ffffff0f; --text: #eef0f4; --dim: #8b91a0;
+    --accent: #4c8dff; --accent-soft: #4c8dff22; --green: #3ccf7e; --red: #ff5a5f; --orange: #ff9f43;
+    --purple: #a970ff; --yellow: #f7c948; --teal: #2ec4c9; --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.35 "Inter", system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif; user-select: none; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  svg.i { width: 22px; height: 22px; flex: none; display: block; }
+  header { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); }
+  .tabs { display: flex; gap: 4px; background: var(--card); padding: 4px; border-radius: 14px; border: 1px solid var(--line); }
+  .tab { border: 0; background: none; color: var(--dim); font: inherit; font-weight: 600; font-size: 15px; padding: 9px 16px;
+    border-radius: 10px; display: flex; gap: 8px; align-items: center; transition: background .2s, color .2s; }
+  .tab svg.i { width: 19px; height: 19px; }
+  .tab.on { background: var(--accent); color: #fff; }
+  .spacer { flex: 1; }
+  .clock { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 18px; color: var(--dim); }
+  .iconbtn { border: 1px solid var(--line); background: var(--card); color: var(--text); width: 42px; height: 42px;
+    border-radius: 12px; display: grid; place-items: center; }
+  .iconbtn svg.i { width: 19px; height: 19px; }
+  main { flex: 1; overflow: auto; padding: 6px 16px 28px; }
+  .view { display: none; max-width: 1100px; margin: 0 auto; } .view.on { display: block; }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+    margin: 22px 4px 10px; display: flex; align-items: center; gap: 8px; }
+  h2 svg.i { width: 15px; height: 15px; }
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .btn { border: 1px solid var(--line); color: var(--text); background: var(--card); border-radius: var(--radius);
+    padding: 16px 10px; font: inherit; font-size: 14px; font-weight: 600; display: flex; flex-direction: column;
+    align-items: center; gap: 10px; min-height: 108px; justify-content: center; text-align: center;
+    transition: transform .08s, background .2s, border-color .2s; }
+  .btn:active { transform: scale(.96); background: var(--card2); }
+  .btn .ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; }
+  .btn.on { background: var(--accent-soft); border-color: var(--accent); }
+  .btn.alert { background: #ff5a5f1f; border-color: var(--red); }
+  .g-blue { background: linear-gradient(140deg, #5b9dff, #2f6fe0); } .g-red { background: linear-gradient(140deg, #ff7a7e, #e0393f); }
+  .g-green { background: linear-gradient(140deg, #5ee39b, #22a565); } .g-purple { background: linear-gradient(140deg, #bf8cff, #8350e0); }
+  .g-orange { background: linear-gradient(140deg, #ffb86b, #f07a1a); } .g-yellow { background: linear-gradient(140deg, #ffd96a, #e0a610); }
+  .g-teal { background: linear-gradient(140deg, #5ee0e4, #1b9ea3); } .g-gray { background: linear-gradient(140deg, #6b7180, #3c414d); }
+  .vol { display: flex; align-items: center; gap: 12px; }
+  .vol input { flex: 1; accent-color: var(--accent); height: 36px; }
+  .big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .media { display: flex; align-items: center; gap: 12px; }
+  .media .art { width: 52px; height: 52px; border-radius: 14px; background: var(--card2); color: var(--dim);
+    display: grid; place-items: center; flex: none; }
+  .media .t { flex: 1; min-width: 0; } .media .t div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .round { width: 54px; height: 54px; border-radius: 50%; border: 0; background: var(--card2); color: var(--text);
+    display: grid; place-items: center; flex: none; transition: transform .08s; }
+  .round:active { transform: scale(.92); }
+  .round.main { background: var(--accent); color: #fff; width: 62px; height: 62px; }
+  .dim { color: var(--dim); font-size: 14px; }
+  /* monitor */
+  .mon { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .hero { text-align: center; padding: 28px 16px; background: radial-gradient(120% 140% at 50% 0%, #1d2433, var(--card)); }
+  .hero .time { font-size: clamp(56px, 12vw, 120px); font-weight: 200; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .hero .date { color: var(--dim); font-size: 18px; margin-top: 8px; }
+  .meter { height: 8px; background: var(--card2); border-radius: 999px; overflow: hidden; margin-top: 12px; }
+  .meter > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width .6s; }
+  .k { display: flex; justify-content: space-between; align-items: center; }
+  .k .lbl { display: flex; align-items: center; gap: 8px; color: var(--dim); font-weight: 600; font-size: 14px; }
+  .k .lbl svg.i { width: 18px; height: 18px; }
+  .k .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  canvas.spark { width: 100%; height: 42px; display: block; margin-top: 10px; }
+  .list div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .list div:first-child { border-top: 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 10px; background: var(--dim); }
+  .dot.ok { background: var(--green); box-shadow: 0 0 0 3px #3ccf7e22; } .dot.bad { background: var(--red); }
+  /* draw */
+  #draw.on { display: flex; flex-direction: column; height: 100%; max-width: none; }
+  .drawbar { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; flex-wrap: wrap; }
+  .pill { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 9px 14px; border-radius: 12px;
+    font: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .pill svg.i { width: 18px; height: 18px; }
+  .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #pad { flex: 1; min-height: 300px; background: var(--card);
+    background-image: radial-gradient(#ffffff10 1px, transparent 1px); background-size: 24px 24px;
+    border-radius: var(--radius); position: relative; touch-action: none; overflow: hidden; border: 1px solid var(--line); }
+  #pad canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #padhint { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); text-align: center;
+    pointer-events: none; padding: 20px; line-height: 1.6; }
+  .banner { background: #f7c9481a; border: 1px solid #f7c94855; color: #ffe08a; padding: 12px 14px; border-radius: 14px;
+    margin-bottom: 10px; display: none; gap: 10px; align-items: center; font-size: 14px; }
+  .banner[style*="block"] { display: flex !important; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #000d; padding: 10px 18px;
+    border-radius: 12px; opacity: 0; transition: opacity .3s; pointer-events: none; font-size: 14px; }
+  .toast.on { opacity: 1; }
+  .err { color: #ff9a9a; }
+  /* camera / mic */
+  #media.on { display: flex; flex-direction: column; height: 100%; max-width: none; }
+  .stage { flex: 1; position: relative; border-radius: var(--radius); overflow: hidden; background: #000;
+    border: 1px solid var(--line); min-height: 240px; }
+  .stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .stage .idle { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); text-align: center; padding: 20px; }
+  .stage .idle svg.i { width: 48px; height: 48px; margin: 0 auto 12px; opacity: .6; }
+  .mbar { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; flex-wrap: wrap; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: var(--card);
+    border: 1px solid var(--line); font-size: 14px; font-weight: 600; color: var(--dim); }
+  .chip.live { color: #fff; border-color: var(--green); background: #3ccf7e1f; }
+  .chip svg.i { width: 18px; height: 18px; }
+  .lvl { width: 70px; height: 6px; border-radius: 99px; background: var(--card2); overflow: hidden; }
+  .lvl > div { height: 100%; width: 0; background: var(--green); transition: width .1s; }
+  body.media-only header .tabs { display: none; }
+  @media (max-width: 560px) { .tab span { display: none; } .tab { padding: 9px 13px; } .clock { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol><symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol><symbol id="i-pen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol><symbol id="i-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol><symbol id="i-vol-low" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></symbol><symbol id="i-vol-high" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></symbol><symbol id="i-vol-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4Z"/><path d="m22 9-6 6M16 9l6 6"/></symbol><symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"/></symbol><symbol id="i-mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20M9 9v2a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.7"/><path d="M17 16.9A7 7 0 0 1 5 11v-1M19 10v1a7 7 0 0 1-.1 1.2M12 18v4M8 22h8"/></symbol><symbol id="i-prev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20 9 12l10-8Z" fill="currentColor"/><path d="M5 19V5"/></symbol><symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 4 10 8-10 8Z" fill="currentColor"/><path d="M19 5v14"/></symbol><symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13-8Z" fill="currentColor"/></symbol><symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor"/></symbol><symbol id="i-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol><symbol id="i-sun-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 4h.01M20 12h.01M12 20h.01M4 12h.01M17.7 6.3h.01M17.7 17.7h.01M6.3 17.7h.01M6.3 6.3h.01"/></symbol><symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></symbol><symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol><symbol id="i-contrast" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20a10 10 0 0 0 0-20Z" fill="currentColor"/></symbol><symbol id="i-bell-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0 1 18 8a21 21 0 0 0 .6 5M17 17H3s3-2 3-9a4.7 4.7 0 0 1 .3-1.7M10.3 21a1.9 1.9 0 0 0 3.4 0M2 2l20 20"/></symbol><symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></symbol><symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></symbol><symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="11" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol><symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 17h7"/><rect x="2" y="3" width="20" height="18" rx="2.5"/></symbol><symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol><symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol><symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></symbol><symbol id="i-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol><symbol id="i-app" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol><symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></symbol><symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></symbol><symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol><symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol><symbol id="i-memory" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19v-3M10 19v-3M14 19v-3M18 19v-3M8 11V9M16 11V9M12 11V9"/><rect x="2" y="5" width="20" height="11" rx="2"/></symbol><symbol id="i-disk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1ZM6 16h.01M10 16h.01"/></symbol><symbol id="i-battery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2"/></symbol><symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a10 10 0 0 1 14 0M8.5 16.4a5 5 0 0 1 7 0M2 8.8a15 15 0 0 1 20 0M12 20h.01"/></symbol><symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></symbol><symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol><symbol id="i-hand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.4l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/></symbol><symbol id="i-eraser" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21M22 21H7M5 11l9 9"/></symbol><symbol id="i-flip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10a8 8 0 0 0-14.9-3M4 4v4h4M4 14a8 8 0 0 0 14.9 3M20 20v-4h-4"/></symbol><symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol><symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3ZM12 9v4M12 17h.01"/></symbol></svg>
+<header>
+  <div class="tabs">
+    <button class="tab" data-v="panel"><svg class="i"><use href="#i-sliders"/></svg><span>Controls</span></button>
+    <button class="tab" data-v="monitor"><svg class="i"><use href="#i-activity"/></svg><span>Monitor</span></button>
+    <button class="tab" data-v="draw"><svg class="i"><use href="#i-pen"/></svg><span>Draw</span></button>
+    <button class="tab" data-v="media"><svg class="i"><use href="#i-video"/></svg><span>Camera &amp; audio</span></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="clock" id="clock">--:--</div>
+  <button class="iconbtn" id="fs" title="Full screen"><svg class="i"><use href="#i-maximize"/></svg></button>
+</header>
+
+<main>
+  <!-- ======================= CONTROLS ======================= -->
+  <section class="view" id="panel">
+    <h2>Sound</h2>
+    <div class="card">
+      <div class="vol">
+        <button class="round" data-a="vol_down" title="Quieter"><svg class="i"><use href="#i-vol-low"/></svg></button>
+        <input type="range" id="vol" min="0" max="100" step="1">
+        <button class="round" data-a="vol_up" title="Louder"><svg class="i"><use href="#i-vol-high"/></svg></button>
+        <div class="big" id="volv" style="min-width:76px;text-align:right">--%</div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <button class="btn" id="b-mute" data-a="mute"><div class="ic g-blue"><svg class="i"><use href="#i-vol-x"/></svg></div><span>Mute laptop</span></button>
+      <button class="btn" id="b-mic" data-a="mic"><div class="ic g-red"><svg class="i"><use href="#i-mic"/></svg></div><span>Mute mic</span></button>
+    </div>
+
+    <h2>Now playing</h2>
+    <div class="card media">
+      <div class="art"><svg class="i"><use href="#i-music"/></svg></div><div class="t"><div id="mt" style="font-weight:700">Nothing playing</div><div class="dim" id="ma">Open music or a video on the laptop</div></div>
+      <button class="round" data-a="prev" title="Previous"><svg class="i"><use href="#i-prev"/></svg></button>
+      <button class="round main" data-a="play" id="b-play" title="Play / pause"><svg class="i"><use href="#i-play"/></svg></button>
+      <button class="round" data-a="next" title="Next"><svg class="i"><use href="#i-next"/></svg></button>
+    </div>
+
+    <h2>Laptop</h2>
+    <div class="grid">
+      <button class="btn" data-a="bright_down"><div class="ic g-yellow"><svg class="i"><use href="#i-sun-dim"/></svg></div>Dimmer</button>
+      <button class="btn" data-a="bright_up"><div class="ic g-yellow"><svg class="i"><use href="#i-sun"/></svg></div><span>Brighter <b id="brv"></b></span></button>
+      <button class="btn" id="b-night" data-a="night"><div class="ic g-orange"><svg class="i"><use href="#i-moon"/></svg></div>Night light</button>
+      <button class="btn" id="b-dark" data-a="dark"><div class="ic g-gray"><svg class="i"><use href="#i-contrast"/></svg></div>Dark mode</button>
+      <button class="btn" id="b-dnd" data-a="dnd"><div class="ic g-purple"><svg class="i"><use href="#i-bell-off"/></svg></div>Do not disturb</button>
+      <button class="btn" data-a="screenshot"><div class="ic g-teal"><svg class="i"><use href="#i-camera"/></svg></div>Screenshot</button>
+      <button class="btn" data-a="phone_screen"><div class="ic g-blue"><svg class="i"><use href="#i-phone"/></svg></div>Phone screen</button>
+      <button class="btn" data-a="lock"><div class="ic g-gray"><svg class="i"><use href="#i-lock"/></svg></div>Lock laptop</button>
+    </div>
+
+    <h2>Open</h2>
+    <div class="grid" id="launch"></div>
+    <p class="dim" style="margin:10px 4px">Edit these buttons in <code>~/.config/phone-connect-panel.json</code></p>
+  </section>
+
+  <!-- ======================= MONITOR ======================= -->
+  <section class="view" id="monitor">
+    <div class="card hero"><div class="time" id="bigtime">--:--</div><div class="date" id="bigdate"></div></div>
+    <h2>Laptop</h2>
+    <div class="mon">
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-cpu"/></svg>CPU</span><span class="v" id="cpu">--</span></div>
+        <canvas class="spark" id="cpuspark"></canvas><div class="dim" id="temp"></div></div>
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-memory"/></svg>Memory</span><span class="v" id="ram">--</span></div>
+        <div class="meter"><div id="ramm"></div></div><div class="dim" id="ramd" style="margin-top:8px"></div></div>
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-disk"/></svg>Disk</span><span class="v" id="disk">--</span></div>
+        <div class="meter"><div id="diskm"></div></div><div class="dim" id="diskd" style="margin-top:8px"></div></div>
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-battery"/></svg>Battery</span><span class="v" id="bat">--</span></div>
+        <div class="meter"><div id="batm" style="background:var(--green)"></div></div><div class="dim" id="batd" style="margin-top:8px"></div></div>
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-wifi"/></svg>Network</span><span class="v" id="netd">--</span></div>
+        <canvas class="spark" id="netspark"></canvas><div class="dim" id="netu"></div></div>
+      <div class="card"><div class="k"><span class="lbl"><svg class="i"><use href="#i-phone"/></svg>Phone</span><span class="v" id="ph">--</span></div>
+        <div class="dim" id="phd" style="margin-top:8px">Not connected</div></div>
+    </div>
+    <h2><svg class="i"><use href="#i-box"/></svg>Docker</h2>
+    <div class="card list" id="docker"><div class="dim">Checking…</div></div>
+    <h2><svg class="i"><use href="#i-list"/></svg>Busiest apps</h2>
+    <div class="card list" id="top"></div>
+  </section>
+
+  <!-- ======================= DRAW ======================= -->
+  <section class="view" id="draw">
+    <div class="banner" id="penban"></div>
+    <div class="drawbar">
+      <span class="dim" id="penstate">Connecting…</span>
+      <div class="spacer"></div>
+      <button class="pill" id="finger"><svg class="i"><use href="#i-hand"/></svg>Finger draws too</button>
+      <button class="pill" id="erase"><svg class="i"><use href="#i-eraser"/></svg>Eraser</button>
+    </div>
+    <div id="pad"><canvas id="ink"></canvas>
+      <div id="padhint"><div>Draw here with your pen (or finger).<br>This area is your whole laptop screen.<br><span class="dim">Pen button / eraser end = erase</span></div></div>
+    </div>
+  </section>
+  <!-- ======================= CAMERA / MIC (for the laptop) ======================= -->
+  <section class="view" id="media">
+    <div class="mbar">
+      <div class="chip" id="camchip"><svg class="i"><use href="#i-video"/></svg><span id="camst">Camera off</span></div>
+      <div class="chip" id="micchip"><svg class="i"><use href="#i-mic"/></svg><span id="micst">Mic off</span><div class="lvl"><div id="miclvl"></div></div></div>
+      <div class="chip" id="spkchip"><svg class="i"><use href="#i-vol-high"/></svg><span id="spkst">Speaker off</span><div class="lvl"><div id="spklvl"></div></div></div>
+      <button class="pill on" id="spktap" style="display:none"><svg class="i"><use href="#i-vol-high"/></svg>Tap to turn on sound</button>
+      <div class="spacer"></div>
+      <button class="pill" id="camflip"><svg class="i"><use href="#i-flip"/></svg>Switch camera</button>
+    </div>
+    <div class="stage"><video id="camv" autoplay muted playsinline></video>
+      <div class="idle" id="camidle"><div><svg class="i"><use href="#i-video"/></svg>Waiting for the laptop…<br><span class="dim">Turn on the webcam, microphone or speaker in Phone Connect.<br>Keep this page open while you use them.</span></div></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const q = new URLSearchParams(location.search), T = q.get("t") || "";
+const $ = (id) => document.getElementById(id);
+const WSP = location.protocol === "https:" ? "wss:" : "ws:";
+let lastWant = null;
+let state = null, view = q.get("view") || "panel";
+
+// ---------- helpers
+const gb = (b) => b >= 1e12 ? (b / 1e12).toFixed(1) + " TB" : (b / 1e9).toFixed(1) + " GB";
+const rate = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + " MB/s" : (b / 1e3).toFixed(0) + " KB/s";
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1600); }
+async function api(path, body) {
+  const r = await fetch(path + "?t=" + encodeURIComponent(T), body ? { method: "POST", body: JSON.stringify(body) } : {});
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function act(id, arg) {
+  try { const r = await api("/api/action", { id, arg }); applyControls(r.controls); }
+  catch (e) { toast("Laptop not reachable"); }
+}
+
+// ---------- tabs, clock, full screen, keep awake
+function show(v) {
+  view = v;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  document.querySelectorAll(".view").forEach(s => s.classList.toggle("on", s.id === v));
+  if (v === "draw") { sizeInk(); connectPen(); }
+  if (v === "media") setTimeout(mediaLoop, 50);
+  history.replaceState(null, "", "?t=" + encodeURIComponent(T) + "&view=" + v);
+}
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => show(b.dataset.v));
+$("fs").onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+let wake = null;
+async function keepAwake() { try { wake = await navigator.wakeLock.request("screen"); } catch (e) {} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
+keepAwake();
+function tick() {
+  const d = new Date();
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  $("clock").textContent = hm; $("bigtime").textContent = hm;
+  $("bigdate").textContent = d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+setInterval(tick, 1000); tick();
+
+// ---------- controls
+document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => act(b.dataset.a));
+let volDrag = false;
+$("vol").oninput = () => { volDrag = true; $("volv").textContent = $("vol").value + "%"; };
+$("vol").onchange = () => { act("vol_set", +$("vol").value); setTimeout(() => volDrag = false, 600); };
+function setIcon(el, n) { const u = el.querySelector("use"); if (u && u.getAttribute("href") !== "#i-" + n) u.setAttribute("href", "#i-" + n); }
+function applyControls(c) {
+  if (!c) return;
+  if (c.volume && c.volume.level != null && !volDrag) { $("vol").value = c.volume.level; $("volv").textContent = c.volume.level + "%"; }
+  const muted = !!(c.volume && c.volume.muted);
+  $("b-mute").classList.toggle("on", muted);
+  $("b-mute").querySelector("span").textContent = muted ? "Laptop is muted" : "Mute laptop";
+  setIcon($("b-play"), c.media && c.media.status === "Playing" ? "pause" : "play");
+  const micOff = !!(c.mic && c.mic.muted);
+  $("b-mic").classList.toggle("alert", micOff);
+  $("b-mic").querySelector("span").textContent = micOff ? "Mic is muted" : "Mute mic";
+  setIcon($("b-mic").querySelector(".ic"), micOff ? "mic-off" : "mic");
+  $("b-night").classList.toggle("on", c.night); $("b-dark").classList.toggle("on", c.dark); $("b-dnd").classList.toggle("on", c.dnd);
+  $("brv").textContent = c.brightness != null ? c.brightness + "%" : "";
+  if (c.media) { $("mt").textContent = c.media.title; $("ma").textContent = (c.media.artist || "") + (c.media.status === "Playing" ? " · Playing" : " · Paused"); }
+  else { $("mt").textContent = "Nothing playing"; $("ma").textContent = "Open music or a video on the laptop"; }
+  const L = $("launch"), key = JSON.stringify(c.buttons);
+  if (L._key !== key) {
+    L._key = key; L.innerHTML = "";
+    const colors = ["g-blue", "g-purple", "g-green", "g-orange", "g-teal", "g-red", "g-yellow"];
+    (c.buttons || []).forEach((b, i) => {
+      const el = document.createElement("button"); el.className = "btn";
+      el.innerHTML = `<div class="ic ${colors[i % colors.length]}"><svg class="i"><use href="#i-${launchIcon(b)}"/></svg></div><span></span>`;
+      el.querySelector("span").textContent = b.label;
+      el.onclick = () => { act("launch", i); toast("Opening " + b.label + "…"); };
+      L.appendChild(el);
+    });
+  }
+  const p = c.phone || {};
+  $("ph").textContent = p.battery != null ? p.battery + "%" : "--";
+  $("phd").textContent = p.model ? `${p.model}${p.charging ? " · charging" : ""}` : "Not connected";
+}
+
+// ---------- monitor
+const cpuHist = [], netHist = [];
+function spark(canvas, data, color, max) {
+  const r = devicePixelRatio || 1, w = canvas.clientWidth * r, h = canvas.clientHeight * r;
+  canvas.width = w; canvas.height = h;
+  const g = canvas.getContext("2d"); g.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+  const m = max || Math.max(...data, 1);
+  g.beginPath();
+  data.forEach((v, i) => { const x = i / (60 - 1) * w, y = h - (v / m) * (h - 4) - 2; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = color; g.lineWidth = 2.5 * r; g.lineJoin = "round"; g.stroke();
+  g.lineTo((data.length - 1) / 59 * w, h); g.lineTo(0, h); g.closePath();
+  g.fillStyle = color + "33"; g.fill();
+}
+function applyStats(s) {
+  if (!s) return;
+  $("cpu").textContent = Math.round(s.cpu) + "%";
+  cpuHist.push(s.cpu); if (cpuHist.length > 60) cpuHist.shift();
+  spark($("cpuspark"), cpuHist, "#62a0ea", 100);
+  $("temp").textContent = (s.temp ? Math.round(s.temp) + " °C · " : "") + s.cores + " cores";
+  const rp = s.ram_used / s.ram_total * 100;
+  $("ram").textContent = Math.round(rp) + "%"; $("ramm").style.width = rp + "%";
+  $("ramm").style.background = rp > 85 ? "var(--red)" : "var(--blue)";
+  $("ramd").textContent = gb(s.ram_used) + " of " + gb(s.ram_total);
+  const dp = s.disk_used / s.disk_total * 100;
+  $("disk").textContent = Math.round(dp) + "%"; $("diskm").style.width = dp + "%";
+  $("diskm").style.background = dp > 90 ? "var(--red)" : "var(--purple)";
+  $("diskd").textContent = gb(s.disk_total - s.disk_used) + " free of " + gb(s.disk_total);
+  if (s.battery) {
+    $("bat").textContent = s.battery.level + "%"; $("batm").style.width = s.battery.level + "%";
+    $("batm").style.background = s.battery.level < 20 ? "var(--red)" : "var(--green)";
+    $("batd").textContent = s.battery.status;
+  }
+  netHist.push(s.net_down); if (netHist.length > 60) netHist.shift();
+  spark($("netspark"), netHist, "#33d17a");
+  $("netd").textContent = rate(s.net_down); $("netu").textContent = "Download · " + rate(s.net_up) + " upload";
+  const D = $("docker");
+  if (!s.docker.running) D.innerHTML = '<div><span><span class="dot"></span>Docker is not running</span></div>';
+  else if (!s.docker.containers.length) D.innerHTML = '<div><span><span class="dot ok"></span>Docker running · no containers</span></div>';
+  else D.innerHTML = s.docker.containers.map(c => `<div><span><span class="dot ${c.state === "running" ? "ok" : c.state === "exited" ? "" : "bad"}"></span>${esc(c.name)}</span><span class="dim">${esc(c.status)}</span></div>`).join("");
+  $("top").innerHTML = s.top.map(p => `<div><span>${esc(p.name)}</span><span class="dim">${p.cpu.toFixed(0)}% CPU · ${p.mem.toFixed(1)}% RAM</span></div>`).join("");
+}
+const EMOJI = { "⌨️": "terminal", "🧩": "code", "📁": "folder", "🌐": "globe", "🗂️": "briefcase", "🎵": "music", "✉️": "mail", "💬": "chat", "⚙️": "settings" };
+function launchIcon(b) {
+  const n = EMOJI[b.icon] || b.icon || "";
+  if (document.getElementById("i-" + n)) return n;
+  const l = (b.label + " " + (b.command || "")).toLowerCase();
+  const guess = [["terminal", "terminal"], ["code", "code"], ["file", "folder"], ["nautilus", "folder"], ["chrome", "globe"],
+    ["firefox", "globe"], ["browser", "globe"], ["project", "briefcase"], ["music", "music"], ["spotify", "music"],
+    ["mail", "mail"], ["slack", "chat"], ["discord", "chat"], ["setting", "settings"]].find(([k]) => l.includes(k));
+  return guess ? guess[1] : "app";
+}
+const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function poll() {
+  try {
+    const r = await api("/api/state");
+    applyStats(r.stats); applyControls(r.controls);
+    if (r.want && r.want.id !== lastWant) {           // the laptop asked for a view (e.g. webcam turned on)
+      if (lastWant !== null || Date.now() / 1000 - r.want.id < 15) show(r.want.view);
+      lastWant = r.want.id;
+    }
+    if (!r.pen_ready) penSetupNeeded(); else $("penban").style.display = "none";
+  } catch (e) { toast("Waiting for the laptop…"); }
+}
+setInterval(() => { if (document.visibilityState === "visible") poll(); }, 2000);
+poll();
+
+// ---------- draw
+let ws = null, wsOpen = false, finger = false, eraseMode = false, queue = [];
+function penSetupNeeded() {
+  const b = $("penban"); b.style.display = "block";
+  $("penstate").textContent = "Setup needed on the laptop";
+  b.innerHTML = '<svg class="i"><use href="#i-alert"/></svg><span>One-time setup on the laptop: open Phone Connect › Drawing pad and enter your password.</span>';
+}
+function connectPen() {
+  if (ws && ws.readyState <= 1) return;
+  ws = new WebSocket(`${WSP}//${location.host}/ws/pen?t=${encodeURIComponent(T)}`);
+  ws.onopen = () => { wsOpen = true; $("penstate").textContent = "Connected — your pen moves the laptop cursor"; };
+  // (replaced by "Setup needed" if the laptop says the pen isn't set up yet)
+  ws.onclose = () => { wsOpen = false; $("penstate").textContent = "Reconnecting…"; setTimeout(() => view === "draw" && connectPen(), 1500); };
+  ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.error === "setup" || m.ready === false) penSetupNeeded(); else if (m.error) $("penstate").innerHTML = '<span class="err">' + esc(m.error) + "</span>"; };
+}
+setInterval(() => { if (wsOpen && queue.length) { ws.send(queue.join("\n")); queue = []; } }, 8);
+$("finger").onclick = () => { finger = !finger; $("finger").classList.toggle("on", finger); };
+$("erase").onclick = () => { eraseMode = !eraseMode; $("erase").classList.toggle("on", eraseMode); };
+
+const pad = $("pad"), ink = $("ink"), ctx = ink.getContext("2d");
+function sizeInk() { const r = devicePixelRatio || 1; ink.width = pad.clientWidth * r; ink.height = pad.clientHeight * r; }
+addEventListener("resize", sizeInk);
+let last = null, strokes = [];
+function send(kind, e) {
+  const rect = pad.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width, y = (e.clientY - rect.top) / rect.height;
+  const pressure = e.pointerType === "pen" ? (e.pressure || 0.5) : 0.6;
+  const eraser = eraseMode || (e.buttons & 32) || e.button === 5 ? 1 : 0;
+  const barrel = (e.buttons & 2) ? 1 : 0;
+  queue.push(`${kind} ${x.toFixed(5)} ${y.toFixed(5)} ${pressure.toFixed(3)} ${e.tiltX || 0} ${e.tiltY || 0} ${eraser} ${barrel}`);
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top, p: pressure, eraser };
+}
+function drawLocal(a, b) {   // faint local trail so you can see what you draw
+  const r = devicePixelRatio || 1;
+  strokes.push({ a, b, t: performance.now() });
+}
+function fade() {
+  const r = devicePixelRatio || 1, now = performance.now();
+  ctx.clearRect(0, 0, ink.width, ink.height);
+  strokes = strokes.filter(s => now - s.t < 1800);
+  for (const s of strokes) {
+    const age = (now - s.t) / 1800;
+    ctx.strokeStyle = s.b.eraser ? `rgba(255,120,120,${0.6 * (1 - age)})` : `rgba(140,190,255,${0.9 * (1 - age)})`;
+    ctx.lineWidth = (1 + s.b.p * 6) * r; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(s.a.x * r, s.a.y * r); ctx.lineTo(s.b.x * r, s.b.y * r); ctx.stroke();
+  }
+  requestAnimationFrame(fade);
+}
+requestAnimationFrame(fade);
+const allowed = (e) => e.pointerType === "pen" || e.pointerType === "mouse" || finger;
+pad.addEventListener("pointerdown", e => {
+  if (!allowed(e)) return;
+  $("padhint").style.display = "none";
+  pad.setPointerCapture(e.pointerId); last = send("d", e); e.preventDefault();
+});
+pad.addEventListener("pointermove", e => {
+  if (!allowed(e)) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of evs) {
+    const down = ev.buttons & 1 || ev.pressure > 0 && ev.pointerType === "pen" && ev.buttons;
+    const cur = send(down ? "m" : "h", ev);
+    if (down && last) drawLocal(last, cur);
+    last = cur;
+  }
+  e.preventDefault();
+});
+["pointerup", "pointercancel"].forEach(t => pad.addEventListener(t, e => { if (allowed(e)) { send("u", e); last = null; } }));
+pad.addEventListener("pointerleave", e => { if (e.pointerType === "pen") send("l", e); });
+
+// ---------- camera / mic for the laptop (browser capture; works on older Android too)
+const media = { cam: null, mic: null, spk: null, facing: q.get("facing") || "back" };
+function mediaSocket(kind, onReady) {
+  if (media[kind] && media[kind].ws) return;
+  const ws = new WebSocket(`${WSP}//${location.host}/ws/${kind}?t=${encodeURIComponent(T)}`);
+  ws.binaryType = "arraybuffer";
+  const st = media[kind] = { ws, live: false, stop: null };
+  ws.onmessage = async (e) => {
+    if (typeof e.data !== "string") { if (st.onBinary) st.onBinary(e.data); return; }
+    const m = JSON.parse(e.data);
+    if (m.ready && !st.live) {
+      if (m.facing) media.facing = m.facing;
+      try { st.stop = await onReady(ws, st); st.live = true; } catch (err) { setMediaStatus(kind, "Allow access: " + err.name); ws.close(); }
+    }
+    if (m.stop || m.error) ws.close();
+  };
+  ws.onclose = () => { if (st.stop) st.stop(); st.live = false; media[kind] = null; setMediaStatus(kind, null); };
+}
+function setMediaStatus(kind, text) {
+  const chip = $(kind + "chip"), on = !!text && !/^Allow/.test(text);
+  chip.classList.toggle("live", on);
+  $(kind + "st").textContent = text || ({ cam: "Camera off", mic: "Mic off", spk: "Speaker off" })[kind];
+  if (kind === "cam") $("camidle").style.display = on ? "none" : "grid";
+}
+async function startCam(ws) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+    facingMode: { ideal: media.facing === "front" ? "user" : "environment" },
+    width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
+  const v = $("camv"); v.srcObject = stream; await v.play().catch(() => {});
+  const c = document.createElement("canvas"), g = c.getContext("2d");
+  let busy = false, frames = 0, t0 = performance.now();
+  const timer = setInterval(() => {
+    if (busy || ws.readyState !== 1 || ws.bufferedAmount > 400000 || !v.videoWidth) return;
+    const s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+    c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+    g.drawImage(v, 0, 0, c.width, c.height);
+    busy = true;
+    c.toBlob(b => { busy = false; if (b && ws.readyState === 1) { ws.send(b); frames++; } }, "image/jpeg", 0.8);
+    const dt = performance.now() - t0;
+    if (dt > 2000) { setMediaStatus("cam", `Webcam live · ${Math.round(frames * 1000 / dt)} fps`); frames = 0; t0 = performance.now(); }
+  }, 1000 / 30);
+  setMediaStatus("cam", "Webcam live");
+  return () => { clearInterval(timer); stream.getTracks().forEach(t => t.stop()); v.srcObject = null; };
+}
+async function startMic(ws) {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: false,
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
+  ws.send(JSON.stringify({ rate: ctx.sampleRate }));
+  const src = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(2048, 1, 1);
+  node.onaudioprocess = (e) => {
+    const f = e.inputBuffer.getChannelData(0), out = new Int16Array(f.length);
+    let peak = 0;
+    for (let i = 0; i < f.length; i++) { const x = Math.max(-1, Math.min(1, f[i])); out[i] = x * 32767; peak = Math.max(peak, Math.abs(x)); }
+    $("miclvl").style.width = Math.min(100, peak * 140) + "%";
+    if (ws.readyState === 1 && ws.bufferedAmount < 64000) ws.send(out.buffer);
+  };
+  src.connect(node); node.connect(ctx.destination);
+  setMediaStatus("mic", "Mic live");
+  return () => { node.disconnect(); src.disconnect(); stream.getTracks().forEach(t => t.stop()); ctx.close(); $("miclvl").style.width = "0"; };
+}
+async function startSpk(ws, st) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let ctx; try { ctx = new AC({ sampleRate: 48000, latencyHint: "interactive" }); } catch (e) { ctx = new AC(); }
+  const tap = $("spktap");
+  const showTap = () => { tap.style.display = ctx.state === "running" ? "none" : "flex"; };
+  tap.onclick = () => ctx.resume().then(showTap);
+  ctx.onstatechange = showTap; showTap();
+  let next = 0;
+  st.onBinary = (buf) => {
+    if (ctx.state !== "running") return;                      // browsers need one tap before sound
+    const pcm = new Int16Array(buf), n = pcm.length >> 1;
+    if (!n) return;
+    const ab = ctx.createBuffer(2, n, 48000), L = ab.getChannelData(0), Rr = ab.getChannelData(1);
+    let peak = 0;
+    for (let i = 0; i < n; i++) { L[i] = pcm[2 * i] / 32768; Rr[i] = pcm[2 * i + 1] / 32768; peak = Math.max(peak, Math.abs(L[i])); }
+    $("spklvl").style.width = Math.min(100, peak * 140) + "%";
+    const src = ctx.createBufferSource(); src.buffer = ab; src.connect(ctx.destination);
+    const now = ctx.currentTime;
+    if (next < now + 0.03 || next > now + 0.35) next = now + 0.1;   // keep ~100 ms of buffer, resync if drifting
+    src.start(next); next += ab.duration;
+  };
+  setMediaStatus("spk", "Speaker live");
+  return () => { st.onBinary = null; ctx.close(); tap.style.display = "none"; $("spklvl").style.width = "0"; };
+}
+$("camflip").onclick = () => {
+  media.facing = media.facing === "front" ? "back" : "front";
+  const ws = media.cam && media.cam.ws;
+  if (ws && ws.readyState === 1) { ws.send(JSON.stringify({ facing: media.facing })); ws.close(); }  // reconnects with the other camera
+};
+function mediaLoop() {
+  if (view !== "media") return;
+  if (!media.cam) mediaSocket("cam", startCam);
+  if (!media.mic) mediaSocket("mic", startMic);
+  if (!media.spk) mediaSocket("spk", startSpk);
+}
+setInterval(mediaLoop, 2500);
+
+show(view);
+mediaLoop();
+</script>
+</body>
+</html>

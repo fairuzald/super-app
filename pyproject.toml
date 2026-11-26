@@ -1,0 +1,32 @@
+# Workspace root. Python packages live in packages/*, add-ons in plugins/*.
+[project]
+name = "super-app-workspace"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = ["superapp-core", "superapp-hub"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+superapp-core = { workspace = true }
+superapp-hub = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["plugins/*/app", "plugins/*/tests"]   # the tool apps keep their own style
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E402", "SIM105"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests"]
+pythonpath = ["packages/core/src"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["superapp_core", "superapp_hub"]

@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Run Super App straight from a checkout (no install needed): puts the workspace packages on the path."""
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+for pkg in ("core", "hub"):
+    sys.path.insert(0, os.path.join(ROOT, "packages", pkg, "src"))
+
+from superapp_hub.app import main  # noqa: E402
+
+sys.exit(main())
