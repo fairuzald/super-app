@@ -1,6 +1,20 @@
-# Phone Connect
+# Device Connect
 
-Use an Android phone or tablet from Ubuntu GNOME over Wi-Fi. A Super App plugin (Linux only).
+Use an Android phone or tablet from your computer over Wi-Fi. A Super App plugin.
+
+- **Linux, Windows and macOS:**
+  - pairing (QR, code or USB) and connecting over Wi-Fi;
+  - mirroring and controlling the phone, opening apps in their own windows;
+  - screenshots and screen recording;
+  - sending and browsing files;
+  - the tablet Control panel and Live monitor, and the Wi-Fi link.
+- **Linux (GNOME) only:**
+  - phone as webcam, microphone or speaker;
+  - extra display and drawing pad;
+  - notifications and SMS through GSConnect;
+  - the display keeper.
+
+These need PipeWire, v4l2loopback, GNOME Remote Desktop and uinput.
 
 | Feature | How |
 |---|---|
@@ -33,7 +47,7 @@ Use an Android phone or tablet from Ubuntu GNOME over Wi-Fi. A Super App plugin 
 - Drawing pad needs a one-time udev rule (`/etc/udev/rules.d/60-phone-connect-uinput.rules`, asked with your password) so the app can create a virtual pen.
 
 ## Use
-- Open **Phone Connect** from the app menu. Phone: Developer options → **Wireless debugging** on, same Wi-Fi.
+- Open **Device Connect** from the app menu. Phone: Developer options → **Wireless debugging** on, same Wi-Fi.
 - First time: **Pair a phone** → pick **QR code**, **Pairing code**, or **USB cable**.
 - After that it finds and connects the phone by itself (mDNS via avahi). Several phones? ☰ → **Your phones** to switch or remove.
 - ☰ → **Settings**: phone screen on/off while mirroring, keep screen on, sound output, quality, window, control.
@@ -42,7 +56,7 @@ Use an Android phone or tablet from Ubuntu GNOME over Wi-Fi. A Super App plugin 
 ## Files
 Plugin: `plugin.toml` (manifest) and `plugin.py` (the hub card). The app itself is in `app/`:
 - `companion.py` – tablet server (control panel, monitor, drawing pad); page in `assets/companion.html`.
-- `phone-connect.py` – the app (Python, GTK4 + libadwaita, system `/usr/bin/python3`).
+- `device-connect.py` – the app (Python, GTK4 + libadwaita, system `/usr/bin/python3`).
 - `../install.sh` – adds the (hidden) app entry, icon and display-keeper service. Run by `packaging/linux/install.sh`; re-run if you move the folder.
 - `assets/` – app icon and illustration (SVG).
 - `phone-mirror.sh` – terminal fallback: `./phone-mirror.sh IP:PORT`.

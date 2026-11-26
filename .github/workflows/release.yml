@@ -23,8 +23,13 @@ jobs:
     with:
       version: ${{ github.ref_name }}
 
+  macos:
+    uses: ./.github/workflows/macos.yml
+    with:
+      version: ${{ github.ref_name }}
+
   publish:
-    needs: [deb, windows]
+    needs: [deb, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

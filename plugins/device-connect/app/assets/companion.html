@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#16161d">
-<title>Phone Connect · Companion</title>
+<title>Device Connect · Companion</title>
 <style>
   :root {
     --bg: #0f1115; --card: #181b22; --card2: #222630; --line: #ffffff0f; --text: #eef0f4; --dim: #8b91a0;
@@ -217,7 +217,7 @@
       <button class="pill" id="camflip"><svg class="i"><use href="#i-flip"/></svg>Switch camera</button>
     </div>
     <div class="stage"><video id="camv" autoplay muted playsinline></video>
-      <div class="idle" id="camidle"><div><svg class="i"><use href="#i-video"/></svg>Waiting for the laptop…<br><span class="dim">Turn on the webcam, microphone or speaker in Phone Connect.<br>Keep this page open while you use them.</span></div></div>
+      <div class="idle" id="camidle"><div><svg class="i"><use href="#i-video"/></svg>Waiting for the laptop…<br><span class="dim">Turn on the webcam, microphone or speaker in Device Connect.<br>Keep this page open while you use them.</span></div></div>
     </div>
   </section>
 </main>
@@ -273,8 +273,26 @@ let volDrag = false;
 $("vol").oninput = () => { volDrag = true; $("volv").textContent = $("vol").value + "%"; };
 $("vol").onchange = () => { act("vol_set", +$("vol").value); setTimeout(() => volDrag = false, 600); };
 function setIcon(el, n) { const u = el.querySelector("use"); if (u && u.getAttribute("href") !== "#i-" + n) u.setAttribute("href", "#i-" + n); }
+function applyCaps(c) {
+  // Hide what this laptop can't do (Windows/macOS have fewer controls than GNOME).
+  if (!c || !c.caps) return;
+  const caps = new Set(c.caps);
+  document.querySelectorAll("#panel [data-a]").forEach(b => { b.style.display = caps.has(b.dataset.a) ? "" : "none"; });
+  $("vol").style.display = caps.has("vol_set") ? "" : "none";
+  $("volv").style.display = c.volume && c.volume.level != null ? "" : "none";
+  const media = document.querySelector("#panel .card.media");
+  if (media) media.style.display = ["play", "next", "prev"].some(a => caps.has(a)) ? "" : "none";
+}
+function applyFeatures(f) {
+  if (!f) return;
+  for (const [v, on] of [["draw", f.pen], ["media", f.media]]) {
+    const t = document.querySelector(`.tab[data-v="${v}"]`);
+    if (t) t.style.display = on ? "" : "none";
+  }
+}
 function applyControls(c) {
   if (!c) return;
+  applyCaps(c);
   if (c.volume && c.volume.level != null && !volDrag) { $("vol").value = c.volume.level; $("volv").textContent = c.volume.level + "%"; }
   const muted = !!(c.volume && c.volume.muted);
   $("b-mute").classList.toggle("on", muted);
@@ -362,12 +380,13 @@ const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;
 async function poll() {
   try {
     const r = await api("/api/state");
-    applyStats(r.stats); applyControls(r.controls);
+    applyStats(r.stats); applyControls(r.controls); applyFeatures(r.features);
     if (r.want && r.want.id !== lastWant) {           // the laptop asked for a view (e.g. webcam turned on)
       if (lastWant !== null || Date.now() / 1000 - r.want.id < 15) show(r.want.view);
       lastWant = r.want.id;
     }
-    if (!r.pen_ready) penSetupNeeded(); else $("penban").style.display = "none";
+    if (r.features && !r.features.pen) $("penban").style.display = "none";
+    else if (!r.pen_ready) penSetupNeeded(); else $("penban").style.display = "none";
   } catch (e) { toast("Waiting for the laptop…"); }
 }
 setInterval(() => { if (document.visibilityState === "visible") poll(); }, 2000);
@@ -378,7 +397,7 @@ let ws = null, wsOpen = false, finger = false, eraseMode = false, queue = [];
 function penSetupNeeded() {
   const b = $("penban"); b.style.display = "block";
   $("penstate").textContent = "Setup needed on the laptop";
-  b.innerHTML = '<svg class="i"><use href="#i-alert"/></svg><span>One-time setup on the laptop: open Phone Connect › Drawing pad and enter your password.</span>';
+  b.innerHTML = '<svg class="i"><use href="#i-alert"/></svg><span>One-time setup on the laptop: open Device Connect › Drawing pad and enter your password.</span>';
 }
 function connectPen() {
   if (ws && ws.readyState <= 1) return;

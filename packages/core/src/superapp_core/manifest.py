@@ -78,7 +78,11 @@ class PluginManifest:
 
     @property
     def icon_path(self) -> Path | None:
-        return (self.root / self.icon) if self.icon else None
+        """The icon file, only if it is inside the plugin folder."""
+        if not self.icon:
+            return None
+        p = (self.root / self.icon).resolve()
+        return p if self.root.resolve() in p.parents else None
 
     def supports(self, platform: Platform) -> bool:
         return platform in self.platforms

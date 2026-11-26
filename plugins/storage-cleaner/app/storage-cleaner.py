@@ -869,6 +869,9 @@ class Win(Adw.ApplicationWindow):
 
         # tiles
         for title, icon, ids in SECTIONS:
+            ids = [i for i in ids if i == "explore" or i in self.cats]     # some categories are Linux-only
+            if not ids:
+                continue
             head = Gtk.Box(spacing=8, margin_top=10)
             head.append(Gtk.Image(icon_name=icon, pixel_size=16, css_classes=["section-icon"]))
             head.append(Gtk.Label(label=title, xalign=0, css_classes=["section"]))
@@ -897,7 +900,7 @@ class Win(Adw.ApplicationWindow):
         return Adw.NavigationPage(title="Storage Cleaner", child=tv, tag="home")
 
     def update_disk(self):
-        root = core.disk_usage("/")
+        root = core.disk_usage(core.system_drive())
         home = core.disk_usage(core.HOME)
         if not root:
             return False

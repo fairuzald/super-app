@@ -57,3 +57,20 @@ def test_first_folder_wins_on_duplicate_ids(ctx, tmp_path):
     r = registry(ctx, [user, bundled])
     assert r.get("dup").manifest.version == "2.0.0"
     assert len(r.issues) == 1
+
+
+def test_world_writable_plugin_is_refused(ctx, tmp_path):
+    import os
+    if os.name != "posix":
+        return
+    folder = make_plugin(tmp_path, "shady")
+    folder.chmod(0o777)
+    r = registry(ctx, [tmp_path])
+    assert r.get("shady") is None
+    assert any("writable by everyone" in i.message for i in r.issues)
+
+
+def test_icon_outside_the_plugin_folder_is_ignored(ctx, tmp_path):
+    make_plugin(tmp_path, "sneaky", icon="../../../etc/passwd")
+    r = registry(ctx, [tmp_path])
+    assert r.get("sneaky").manifest.icon_path is None

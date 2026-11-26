@@ -71,7 +71,7 @@ def setup():
     os.makedirs(DIR, exist_ok=True)
     if not (os.path.exists(CERT) and os.path.exists(KEY)):
         rc, out = run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
-                       "-subj", "/CN=Phone Connect", "-keyout", KEY, "-out", CERT], timeout=30)
+                       "-subj", "/CN=Device Connect", "-keyout", KEY, "-out", CERT], timeout=30)
         if rc:
             raise RuntimeError("Could not create the display certificate: " + out[-200:])
         os.chmod(KEY, 0o600)

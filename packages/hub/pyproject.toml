@@ -1,6 +1,6 @@
 [project]
 name = "superapp-hub"
-version = "1.0.0"
+version = "1.1.0"
 description = "Super App hub window (GTK4 + libadwaita)."
 requires-python = ">=3.11"
 # PyGObject comes from the OS (python3-gi on Debian/Ubuntu, MSYS2 on Windows): it needs the GTK libraries.

@@ -3,7 +3,7 @@
 No GTK here, so it can be tested on its own. Set SC_HOME (and XDG_DATA_HOME)
 to point the whole scanner at a fake home folder.
 """
-import hashlib, json, os, re, shlex, shutil, stat, subprocess, sys, threading, time
+import glob, hashlib, json, os, re, shlex, shutil, stat, string, subprocess, sys, threading, time
 from urllib.parse import unquote
 import gi
 gi.require_version("Gio", "2.0")
@@ -15,11 +15,28 @@ if os.environ.get("SC_HOME"):
 else:
     DOWNLOADS = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.join(HOME, "Downloads")
 DOWNLOADS = os.path.realpath(DOWNLOADS)
+IS_WIN = sys.platform.startswith("win")
+IS_MAC = sys.platform == "darwin"
+IS_LINUX = not (IS_WIN or IS_MAC)
+PLATFORM = "windows" if IS_WIN else "macos" if IS_MAC else "linux"
 DATA_HOME = os.path.realpath(GLib.get_user_data_dir())
-TRASH = os.path.join(DATA_HOME, "Trash")
-CACHE = os.path.join(HOME, ".cache")
-CONFIG = os.path.join(HOME, ".config")
 DOCS = os.path.join(HOME, "Documents")
+if IS_WIN:      # with SC_HOME (tests) everything lives under the fake home
+    APPDATA = os.path.join(HOME, "AppData", "Roaming") if os.environ.get("SC_HOME") else \
+        os.environ.get("APPDATA") or os.path.join(HOME, "AppData", "Roaming")
+    LOCALAPP = os.path.join(HOME, "AppData", "Local") if os.environ.get("SC_HOME") else \
+        os.environ.get("LOCALAPPDATA") or os.path.join(HOME, "AppData", "Local")
+    CACHE, CONFIG, TRASH = LOCALAPP, APPDATA, None            # Recycle Bin: see trash_roots()
+    ANDROID_SDK = os.path.join(LOCALAPP, "Android", "Sdk")
+elif IS_MAC:
+    APPDATA = LOCALAPP = os.path.join(HOME, "Library", "Application Support")
+    CACHE, CONFIG, TRASH = os.path.join(HOME, "Library", "Caches"), APPDATA, os.path.join(HOME, ".Trash")
+    ANDROID_SDK = os.path.join(HOME, "Library", "Android", "sdk")
+else:
+    APPDATA = LOCALAPP = None
+    TRASH = os.path.join(DATA_HOME, "Trash")
+    CACHE, CONFIG = os.path.join(HOME, ".cache"), os.path.join(HOME, ".config")
+    ANDROID_SDK = os.path.join(HOME, "Android", "Sdk")
 DAY = 86400
 INACTIVE_DAYS = 30
 MIN_SHOW = 1 << 20            # hide things smaller than 1 MB
@@ -30,17 +47,34 @@ def H(*p):
 
 
 PROJECT_ROOTS = [DOCS] + [H(n) for n in ("projects", "Projects", "code", "dev", "src", "work", "git",
-                                         "repos", "workspace", "Developer")]
+                                         "repos", "workspace", "Developer")] + [H("source", "repos")]
 
 # Folders that must never be removed themselves (their contents may be).
 PROTECTED = {os.path.realpath(p) for p in (
     HOME, DOCS, DOWNLOADS, CACHE, CONFIG, TRASH, DATA_HOME, H(".local"), H(".local", "share"),
     os.path.join(TRASH, "files"), os.path.join(TRASH, "info"), H("Desktop"), H("Pictures"),
-    H("Music"), H("Videos"), H("Templates"), H("Public"), H("snap"), H(".var"))}
+    H("Music"), H("Videos"), H("Templates"), H("Public"), H("snap"), H(".var"),
+    # Windows and macOS homes
+    H("AppData"), H("AppData", "Local"), H("AppData", "LocalLow"), H("AppData", "Roaming"), H("OneDrive"),
+    H("Movies"), H("Library"), H("Library", "Caches"), H("Library", "Application Support"), H("Applications"),
+    H("Library", "Logs"), H("AppData", "Local", "Temp"), H("source"), H("source", "repos"))
+    if p}
 # Folders whose contents are never touched (keys, passwords, credentials).
 SENSITIVE = [os.path.realpath(p) for p in (
     H(".ssh"), H(".gnupg"), H(".password-store"), os.path.join(DATA_HOME, "keyrings"), H(".pki"),
-    H(".aws"), H(".kube"), H(".docker"), H(".config", "gcloud"), H(".local", "share", "keyrings"))]
+    H(".aws"), H(".kube"), H(".docker"), H(".config", "gcloud"), H(".local", "share", "keyrings"),
+    H("Library", "Keychains"), H("AppData", "Roaming", "Microsoft", "Credentials"),
+    H("AppData", "Roaming", "Microsoft", "Protect"), H("AppData", "Roaming", "Microsoft", "Crypto"),
+    H("AppData", "Roaming", "Microsoft", "SystemCertificates"), H("AppData", "Local", "Microsoft", "Credentials"))]
+
+
+def _c(p):
+    """Compare paths the way the OS does (case-insensitive on Windows)."""
+    return os.path.normcase(p)
+
+
+PROTECTED_C = {_c(p) for p in PROTECTED}
+SENSITIVE_C = [_c(p) for p in SENSITIVE]
 
 
 # ---------------------------------------------------------------- formatting
@@ -81,17 +115,58 @@ def parse_size(s):
 
 
 # ---------------------------------------------------------------- helpers
+NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WIN else {}   # no console flashes on Windows
+
+
 def run(cmd, timeout=60, **kw):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **kw)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **NO_WINDOW, **kw)
     except (OSError, subprocess.TimeoutExpired) as e:
         return subprocess.CompletedProcess(cmd, 255, "", str(e))
 
 
+def tree_size(path, dev=None):
+    """Disk usage of a file or folder in pure Python (for systems without GNU du). Stays on one drive,
+    never follows links, counts hard-linked files once where the OS tells us."""
+    total, seen, stack = 0, set(), [path]
+    while stack:
+        p = stack.pop()
+        try:
+            st = os.lstat(p)
+        except OSError:
+            continue
+        if dev is None:
+            dev = st.st_dev
+        if st.st_dev != dev:
+            continue
+        if stat.S_ISDIR(st.st_mode) and not _is_link(p, st):
+            total += file_size(st) if not IS_WIN else 0
+            try:
+                stack.extend(e.path for e in os.scandir(p))
+            except OSError:
+                pass
+        else:
+            if st.st_nlink > 1 and st.st_ino:
+                if (st.st_dev, st.st_ino) in seen:
+                    continue
+                seen.add((st.st_dev, st.st_ino))
+            total += file_size(st)
+    return total
+
+
+def _is_link(p, st):
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    # Windows junctions are reparse points too: never walk into them
+    return bool(getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
 def du_sizes(paths):
-    """Disk usage (bytes) of many paths, via one `du` call per 300 paths."""
+    """Disk usage (bytes) of many paths, via one `du` call per 300 paths (Python walk where there is no GNU du)."""
     out = {}
     paths = list(paths)
+    if not HAVE_GNU_DU:
+        return {p: tree_size(p) for p in paths}
     for i in range(0, len(paths), 300):
         chunk = paths[i:i + 300]
         try:
@@ -109,6 +184,9 @@ def du_sizes(paths):
     return out
 
 
+HAVE_GNU_DU = IS_LINUX and bool(shutil.which("du"))
+
+
 def du_one(path):
     return du_sizes([path]).get(path, 0)
 
@@ -119,13 +197,22 @@ def file_size(st):
 
 def disk_usage(path):
     try:
-        s = os.statvfs(path)
+        if hasattr(os, "statvfs"):
+            s = os.statvfs(path)
+            total, free, used = s.f_blocks * s.f_frsize, s.f_bavail * s.f_frsize, (s.f_blocks - s.f_bfree) * s.f_frsize
+        else:
+            du = shutil.disk_usage(path)
+            total, free, used = du.total, du.free, du.used
+        return {"total": total, "free": free, "used": used, "dev": os.stat(path).st_dev}
     except OSError:
         return None
-    total = s.f_blocks * s.f_frsize
-    free = s.f_bavail * s.f_frsize
-    return {"total": total, "free": free, "used": total - s.f_bfree * s.f_frsize,
-            "dev": os.stat(path).st_dev}
+
+
+def system_drive():
+    """Where the OS lives: / on Linux and macOS, C:\\ (or wherever Windows is) on Windows."""
+    if IS_WIN:
+        return os.environ.get("SystemDrive", "C:") + "\\"
+    return "/"
 
 
 def mtime(p):
@@ -144,14 +231,15 @@ def resolve(p):
 
 def is_safe(p, allow_trash=False):
     r = resolve(p)
-    if os.path.realpath(r) in PROTECTED or r in PROTECTED:
+    c = _c(r)
+    if _c(os.path.realpath(r)) in PROTECTED_C or c in PROTECTED_C:
         return False
-    if not r.startswith(HOME + os.sep):
+    if any(c == s or c.startswith(s + os.sep) for s in SENSITIVE_C):
         return False
-    if any(r == s or r.startswith(s + os.sep) for s in SENSITIVE):
-        return False
-    in_trash = r.startswith(TRASH + os.sep)
-    return in_trash == allow_trash
+    in_trash = any(c.startswith(_c(t) + os.sep) for t in trash_roots())
+    if allow_trash:
+        return in_trash             # the Recycle Bin is outside the home folder on Windows
+    return not in_trash and c.startswith(_c(HOME) + os.sep)
 
 
 def _make_writable(func, path, _exc):
@@ -167,8 +255,12 @@ def remove_path(p, mode="trash", allow_trash=False):
         raise PermissionError(f"Refusing to touch {short(p)}")
     if not os.path.lexists(p):
         return
+    st = os.lstat(p)
     if mode == "trash":
-        Gio.File.new_for_path(p).trash(None)
+        to_trash(p)
+    elif _is_link(p, st):           # a symlink or Windows junction: remove the link itself, never its target
+        is_dir_link = stat.S_ISDIR(st.st_mode) or getattr(st, "st_file_attributes", 0) & 0x10   # Windows dir link
+        os.rmdir(p) if is_dir_link else os.unlink(p)
     elif os.path.isdir(p) and not os.path.islink(p):
         if sys.version_info >= (3, 12):
             shutil.rmtree(p, onexc=_make_writable)
@@ -176,6 +268,20 @@ def remove_path(p, mode="trash", allow_trash=False):
             shutil.rmtree(p, onerror=_make_writable)
     else:
         os.unlink(p)
+
+
+def to_trash(p):
+    if IS_MAC:          # GLib's trash on macOS is the Linux-style one; Finder uses ~/.Trash
+        os.makedirs(TRASH, exist_ok=True)
+        base, n = os.path.basename(p), 1
+        dest = os.path.join(TRASH, base)
+        while os.path.lexists(dest):
+            n += 1
+            stem, ext = os.path.splitext(base)
+            dest = os.path.join(TRASH, f"{stem} {n}{ext}")
+        shutil.move(p, dest)
+    else:               # Linux: freedesktop Trash; Windows: Recycle Bin (GLib uses the shell API)
+        Gio.File.new_for_path(p).trash(None)
 
 
 # ---------------------------------------------------------------- data model
@@ -189,8 +295,9 @@ class Item:
     """
 
     def __init__(self, title, size=0, paths=(), subtitle="", checked=False, group="", kind="path",
-                 cmd=None, note="", thumb=False, warn=None, mtime=0):
+                 cmd=None, note="", thumb=False, warn=None, mtime=0, best_effort=False):
         self.title, self.size, self.paths = title, int(size or 0), list(paths)
+        self.best_effort = best_effort      # skip files that are in use (Windows Temp) instead of failing
         self.subtitle, self.checked, self.group, self.kind = subtitle, checked, group, kind
         self.cmd, self.note, self.thumb, self.warn, self.mtime = cmd, note, thumb, warn, mtime
 
@@ -203,6 +310,7 @@ class Category:
     safety = "safe"        # safe | review | careful
     method = "rebuild"     # rebuild: Trash or delete | files: Trash only | permanent: delete only
     needs_root = False
+    platforms = ("linux", "windows", "macos")
     group_order = ()
 
     def __init__(self):
@@ -272,6 +380,54 @@ SKIP_CACHES = {"storage-cleaner", "phone-connect", "dconf", "ibus", "ibus-table"
                "evolution", "obexd", "gitstatus"}
 
 
+# Windows has no single cache folder: these are the well-known ones (globs, relative to %LOCALAPPDATA% "L",
+# %APPDATA% "R" or home "H"): (pattern, title, checked, note)
+_BROWSER = "Close the browser first"
+WIN_CACHES = [
+    ("L/Google/Chrome/User Data/*/Cache", "Chrome browser cache", True, _BROWSER),
+    ("L/Google/Chrome/User Data/*/Code Cache", "Chrome browser cache", True, _BROWSER),
+    ("L/Google/Chrome/User Data/*/GPUCache", "Chrome browser cache", True, _BROWSER),
+    ("L/Microsoft/Edge/User Data/*/Cache", "Edge browser cache", True, _BROWSER),
+    ("L/Microsoft/Edge/User Data/*/Code Cache", "Edge browser cache", True, _BROWSER),
+    ("L/Microsoft/Edge/User Data/*/GPUCache", "Edge browser cache", True, _BROWSER),
+    ("L/BraveSoftware/Brave-Browser/User Data/*/Cache", "Brave browser cache", True, _BROWSER),
+    ("L/BraveSoftware/Brave-Browser/User Data/*/Code Cache", "Brave browser cache", True, _BROWSER),
+    ("L/Vivaldi/User Data/*/Cache", "Vivaldi browser cache", True, _BROWSER),
+    ("L/Mozilla/Firefox/Profiles/*/cache2", "Firefox browser cache", True, "Close Firefox first"),
+    ("L/pip/Cache", "pip downloads (Python)", True, ""),
+    ("L/uv/cache", "uv downloads (Python)", True, ""),
+    ("L/pypoetry/Cache", "Poetry downloads (Python)", True, ""),
+    ("L/npm-cache/_cacache", "npm package downloads", True, "npm downloads packages again when needed"),
+    ("L/npm-cache/_npx", "npx temporary packages", True, ""),
+    ("L/Yarn/Cache", "Yarn package downloads", True, ""),
+    ("L/go-build", "Go build cache", True, ""),
+    ("L/Microsoft/Windows/INetCache", "Internet Explorer / WebView cache", True, ""),
+    ("L/CrashDumps", "App crash dumps", True, "Only needed to debug a crash"),
+    ("L/D3DSCache", "Graphics shader cache", True, ""),
+    ("L/NVIDIA/DXCache", "NVIDIA shader cache", True, ""),
+    ("L/NVIDIA/GLCache", "NVIDIA shader cache", True, ""),
+    ("L/ms-playwright", "Playwright test browsers", False, "Get them back with “npx playwright install”"),
+    ("H/.cache/huggingface", "Hugging Face AI models", False, "Downloaded again when an app needs them"),
+    ("H/.nuget/packages", "NuGet packages (.NET)", False, ".NET builds download them again"),
+]
+MAC_SKIP = ("com.apple.", "CloudKit", "storage-cleaner", "phone-connect")
+
+
+def _win_base(tag):
+    return {"L": LOCALAPP, "R": APPDATA, "H": HOME}[tag]
+
+
+def win_cache_paths():
+    """[(title, [paths], checked, note)] for the known Windows caches that exist, merged by title."""
+    merged = {}
+    for pattern, title, checked, note in WIN_CACHES:
+        tag, _, rel = pattern.partition("/")
+        found = [p for p in glob.glob(os.path.join(_win_base(tag), *rel.split("/"))) if os.path.isdir(p)]
+        if found:
+            merged.setdefault(title, ([], checked, note))[0].extend(found)
+    return [(t, paths, c, n) for t, (paths, c, n) in merged.items()]
+
+
 class AppCaches(Category):
     id, icon, color = "caches", "folder-download-symbolic", "c-blue"
     title = "App caches"
@@ -282,11 +438,20 @@ class AppCaches(Category):
     group_order = ("Safe to remove", "Big downloads apps will fetch again", "Other app caches")
 
     def scan(self, progress=None):
+        if IS_WIN:
+            return self.scan_windows()
         try:
-            ents = [e for e in os.scandir(CACHE) if e.name not in SKIP_CACHES and not e.name.startswith("p10k")]
+            ents = [e for e in os.scandir(CACHE) if e.name not in SKIP_CACHES and not e.name.startswith("p10k")
+                    and not (IS_MAC and e.name.startswith(MAC_SKIP))]
         except OSError:
             return []
         sizes = du_sizes([e.path for e in ents])
+        if IS_MAC and os.path.isdir(H("Library", "Logs")):
+            logs = [e.path for e in os.scandir(H("Library", "Logs"))]
+            extra = [Item("App logs", sum(du_sizes(logs).values()), logs, subtitle="~/Library/Logs", checked=True,
+                          group="Safe to remove", note="Apps write new logs as they run", best_effort=True)]
+        else:
+            extra = []
         items = []
         for e in ents:
             label, checked, note = CACHE_INFO.get(e.name, (None, False, ""))
@@ -298,6 +463,25 @@ class AppCaches(Category):
                 label, note, group = f"{e.name}", "An app’s cache; the app rebuilds it when needed", "Other app caches"
             items.append(Item(label, sizes.get(e.path, 0), [e.path], subtitle=short(e.path), checked=checked,
                               group=group, note=note, mtime=mtime(e.path)))
+        return items + extra
+
+    def scan_windows(self):
+        found = win_cache_paths()
+        temp = os.path.join(LOCALAPP, "Temp")
+        try:
+            temp_kids = [e.path for e in os.scandir(temp)]
+        except OSError:
+            temp_kids = []
+        sizes = du_sizes([p for _t, paths, _c, _n in found for p in paths] + temp_kids)
+        items = []
+        if temp_kids:
+            items.append(Item("Temporary files", sum(sizes.get(p, 0) for p in temp_kids), temp_kids,
+                              subtitle=short(temp), checked=True, group="Safe to remove", best_effort=True,
+                              note="Files apps left behind. Ones still in use are skipped"))
+        for title, paths, checked, note in found:
+            items.append(Item(title, sum(sizes.get(p, 0) for p in paths), paths, subtitle=short(paths[0]),
+                              checked=checked, group="Safe to remove" if checked else "Big downloads apps will fetch again",
+                              note=note))
         return items
 
 
@@ -314,13 +498,20 @@ DEV_CACHES = [   # (paths, title, checked, note, group)
     ([".local/share/pnpm/store"], "pnpm package store", False, "Shared by your projects; pnpm re-downloads missing packages", "Package & build caches"),
     ([".gradle/wrapper/dists"], "Downloaded Gradle versions", False, "Projects download the version they need again", "Old versions"),
     ([".m2/repository"], "Maven packages", False, "Java builds download them again", "Package & build caches"),
-    ([".config/Code/Cache", ".config/Code/CachedData", ".config/Code/CachedExtensionVSIXs",
-      ".config/Code/Code Cache", ".config/Code/GPUCache", ".config/Code/logs"],
+    (["@config/Code/Cache", "@config/Code/CachedData", "@config/Code/CachedExtensionVSIXs",
+      "@config/Code/Code Cache", "@config/Code/GPUCache", "@config/Code/logs"],
      "VS Code caches & logs", True, "Close VS Code first", "Editors"),
-    ([".config/Cursor/Cache", ".config/Cursor/CachedData", ".config/Cursor/CachedExtensionVSIXs",
-      ".config/Cursor/Code Cache", ".config/Cursor/GPUCache", ".config/Cursor/logs"],
+    (["@config/Cursor/Cache", "@config/Cursor/CachedData", "@config/Cursor/CachedExtensionVSIXs",
+      "@config/Cursor/Code Cache", "@config/Cursor/GPUCache", "@config/Cursor/logs"],
      "Cursor caches & logs", True, "Close Cursor first", "Editors"),
 ]
+
+
+def dev_path(rel):
+    """A DEV_CACHES path: '@config/...' is under the OS's app-settings folder (~/.config, AppData, Library)."""
+    if rel.startswith("@config/"):
+        return os.path.join(CONFIG, *rel[len("@config/"):].split("/"))
+    return H(*rel.split("/"))
 
 
 def _ver_key(v):
@@ -383,13 +574,13 @@ class DevCaches(Category):
     def scan(self, progress=None):
         items, want = [], []
         for rels, title, checked, note, group in DEV_CACHES:
-            paths = [H(r) for r in rels if os.path.isdir(H(r))]
+            paths = [dev_path(r) for r in rels if os.path.isdir(dev_path(r))]
             if paths:
                 want.append((paths, title, checked, note, group))
         exts = old_vscode_extensions(H(".vscode", "extensions"))
         nodes = old_node_versions(H(".nvm"))
         sysimg = []
-        for base in (H("Android", "Sdk", "system-images"),):
+        for base in (os.path.join(ANDROID_SDK, "system-images"),):
             for root, dirs, _f in os.walk(base):
                 if os.path.exists(os.path.join(root, "source.properties")) or os.path.exists(os.path.join(root, "system.img")):
                     sysimg.append(root)
@@ -410,10 +601,11 @@ class DevCaches(Category):
                               group="Old versions", note="Not your default Node version. Reinstall with “nvm install” if a project needs it"))
         if os.path.isdir(H("go", "pkg", "mod")) and shutil.which("go"):
             items.append(Item("Go module downloads", du_one(H("go", "pkg", "mod")), kind="cmd",
-                              cmd=["go", "clean", "-modcache"], subtitle="~/go/pkg/mod  ·  runs “go clean -modcache”",
+                              cmd=["go", "clean", "-modcache"],
+                              subtitle=f"{short(H('go', 'pkg', 'mod'))}  ·  runs “go clean -modcache”",
                               checked=False, group="Package & build caches", note="Go downloads modules again"))
         for p in sysimg:
-            rel = os.path.relpath(p, H("Android", "Sdk", "system-images"))
+            rel = os.path.relpath(p, os.path.join(ANDROID_SDK, "system-images"))
             items.append(Item(f"Android emulator image: {rel}", sizes.get(p, 0), [p], subtitle=short(p),
                               group="Android", note="Re-download it in Android Studio’s SDK Manager if an emulator needs it"))
         return items
@@ -502,7 +694,7 @@ def project_of(path, roots=None):
     roots = {os.path.realpath(r) for r in (roots or PROJECT_ROOTS)}
     d = os.path.dirname(path)
     first = d
-    while d and d not in roots and d != HOME and d != os.sep:
+    while d and d not in roots and d != HOME and os.path.dirname(d) != d:     # stop at / or C:\\
         try:
             if MARKERS & set(os.listdir(d)):
                 return d
@@ -513,7 +705,7 @@ def project_of(path, roots=None):
 
 
 def git_root(d):
-    while d and d != HOME and d != os.sep:
+    while d and d != HOME and os.path.dirname(d) != d:
         if os.path.isdir(os.path.join(d, ".git")):
             return d
         d = os.path.dirname(d)
@@ -614,6 +806,52 @@ class BuildLeftovers(Category):
 
 
 # ---------------------------------------------------------------- Trash
+# Each entry is (data path, metadata path or None, original path or None, deleted at).
+_recycle_cache = {"t": 0, "dirs": []}
+
+
+def trash_roots():
+    """Folders that hold trashed files: the freedesktop Trash, ~/.Trash, or this user's Recycle Bin folders."""
+    if os.environ.get("SC_TRASH"):
+        return [os.environ["SC_TRASH"]]
+    if not IS_WIN:
+        return [TRASH]
+    if time.time() - _recycle_cache["t"] > 30:
+        dirs = []
+        for letter in string.ascii_uppercase:
+            root = f"{letter}:\\$Recycle.Bin"
+            try:
+                subs = os.listdir(root)
+            except OSError:
+                continue
+            for sub in subs:
+                d = os.path.join(root, sub)
+                try:
+                    os.listdir(d)               # only your own folder (named after your user SID) is readable
+                    dirs.append(d)
+                except OSError:
+                    pass
+        _recycle_cache.update(t=time.time(), dirs=dirs)
+    return _recycle_cache["dirs"]
+
+
+def read_recycle_info(path):
+    """A Recycle Bin $I file: original path and deletion time (Windows Vista+ format, versions 1 and 2)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(4096)
+        ver = int.from_bytes(data[0:8], "little")
+        when = (int.from_bytes(data[16:24], "little") - 116444736000000000) / 1e7
+        if ver >= 2:
+            n = int.from_bytes(data[24:28], "little")
+            orig = data[28:28 + 2 * n].decode("utf-16-le", "replace")
+        else:
+            orig = data[24:24 + 520].decode("utf-16-le", "replace")
+        return orig.split("\0")[0] or None, max(0, when)
+    except (OSError, ValueError):
+        return None, 0
+
+
 def read_trashinfo(info_path):
     orig, when = None, 0
     try:
@@ -632,32 +870,49 @@ def read_trashinfo(info_path):
 
 
 def trash_entries():
-    """[(name, original path, deleted at)] for everything in the home Trash."""
+    """[(data, meta, original path, deleted at)] for everything in your Trash / Recycle Bin."""
+    out = []
+    if IS_WIN and not os.environ.get("SC_TRASH"):
+        for d in trash_roots():
+            try:
+                names = os.listdir(d)
+            except OSError:
+                continue
+            for n in names:
+                if n.upper().startswith("$R"):
+                    meta = os.path.join(d, "$I" + n[2:])
+                    orig, when = read_recycle_info(meta)
+                    out.append((os.path.join(d, n), meta if os.path.exists(meta) else None, orig, when))
+        return out
+    if IS_MAC:
+        try:
+            names = [n for n in os.listdir(TRASH) if n != ".DS_Store"]
+        except OSError:
+            return []
+        return [(os.path.join(TRASH, n), None, None, mtime(os.path.join(TRASH, n))) for n in names]
     files, info = os.path.join(TRASH, "files"), os.path.join(TRASH, "info")
     try:
         names = os.listdir(files)
     except OSError:
         return []
-    out = []
     for n in names:
-        orig, when = read_trashinfo(os.path.join(info, n + ".trashinfo"))
+        meta = os.path.join(info, n + ".trashinfo")
+        orig, when = read_trashinfo(meta)
         if orig and not orig.startswith("/"):
             orig = os.path.join(HOME, orig)
-        out.append((n, orig, when))
+        out.append((os.path.join(files, n), meta, orig, when))
     return out
 
 
 def trash_items(entries=None):
     entries = trash_entries() if entries is None else entries
-    files, info = os.path.join(TRASH, "files"), os.path.join(TRASH, "info")
-    sizes = du_sizes([os.path.join(files, n) for n, _o, _w in entries])
+    sizes = du_sizes([fp for fp, _m, _o, _w in entries])
     items = []
-    for n, orig, when in entries:
-        fp = os.path.join(files, n)
-        title = os.path.basename(orig) if orig else n
-        where = short(os.path.dirname(orig)) if orig else "unknown place"
-        items.append(Item(title, sizes.get(fp, 0), [fp, os.path.join(info, n + ".trashinfo")], kind="trashed",
-                          subtitle=f"From {where}  ·  deleted {fmt_age(when)}", checked=True,
+    for fp, meta, orig, when in entries:
+        title = os.path.basename(orig) if orig else os.path.basename(fp)
+        where = f"From {short(os.path.dirname(orig))}  ·  " if orig else ""
+        items.append(Item(title, sizes.get(fp, 0), [fp] + ([meta] if meta else []), kind="trashed",
+                          subtitle=f"{where}deleted {fmt_age(when)}", checked=True,
                           group="In your Trash", thumb=True, mtime=when))
     return items
 
@@ -665,12 +920,13 @@ def trash_items(entries=None):
 def find_trashed(originals):
     """Trash entries whose original path is one of `originals` (to empty just what we trashed)."""
     want = {resolve(p) for p in originals}
-    return [e for e in trash_entries() if e[1] and resolve(e[1]) in want]
+    want = {_c(p) for p in want}
+    return [e for e in trash_entries() if e[2] and _c(resolve(e[2])) in want]
 
 
 class Trash(Category):
     id, icon, color = "trash", "user-trash-symbolic", "c-red"
-    title = "Trash"
+    title = "Recycle Bin" if IS_WIN else "Trash"
     caption = "Files you already deleted"
     what = ("Files you delete go to the Trash first and still use space until the Trash is emptied. "
             "Emptying removes them for good, so check nothing here is still needed.")
@@ -678,7 +934,18 @@ class Trash(Category):
     group_order = ("In your Trash", "Leftovers")
 
     def scan(self, progress=None):
+        if IS_MAC:
+            try:
+                os.listdir(TRASH)
+            except PermissionError:
+                self.notice = ("Can’t look in the Trash", "Allow Full Disk Access for Python in System Settings › "
+                               "Privacy & Security, or empty the Trash in Finder.", None)
+                return []
+            except OSError:
+                return []
         items = trash_items()
+        if not IS_LINUX:
+            return items
         exp = os.path.join(TRASH, "expunged")
         try:
             left = [os.path.join(exp, n) for n in os.listdir(exp)]
@@ -862,6 +1129,8 @@ class LargeFiles(Category):
     min_mb = 500
 
     def scan(self, progress=None):
+        if not IS_LINUX:
+            return self.items_from(large_files_py(HOME, self.min_mb << 20))
         cmd = ["find", HOME, "-xdev", "(", "-path", TRASH, "-o", "-name", "node_modules", "-o", "-name", ".git",
                "-o", "-path", H("snap"), ")", "-prune", "-o", "-type", "f", "-size", f"+{self.min_mb}M",
                "-printf", r"%s\t%T@\t%p\0"]
@@ -869,21 +1138,53 @@ class LargeFiles(Category):
             out = subprocess.run(cmd, capture_output=True, timeout=1800).stdout
         except (OSError, subprocess.TimeoutExpired):
             return []
-        items = []
+        found = []
         for rec in out.split(b"\0"):
             if not rec:
                 continue
             try:
                 sz, mt, p = rec.split(b"\t", 2)
-                sz, mt, p = int(sz), float(mt), os.fsdecode(p)
+                found.append((int(sz), float(mt), os.fsdecode(p)))
             except ValueError:
                 continue
+        return self.items_from(found)
+
+    def items_from(self, found):
+        items = []
+        for sz, mt, p in found:
             rel = os.path.relpath(p, HOME).split(os.sep)
-            app = any(part.startswith(".") for part in rel[:-1]) or rel[0] in ("Android", "snap", "go")
+            app = any(part.startswith(".") for part in rel[:-1]) or rel[0] in (
+                "Android", "snap", "go", "AppData", "Library")
             items.append(Item(os.path.basename(p), sz, [p], subtitle=f"{short(os.path.dirname(p))}  ·  changed {fmt_age(mt)}",
                               group=self.group_order[1 if app else 0], thumb=True, mtime=mt,
                               note="Used by an app; removing it may reset or break that app" if app else ""))
         return items
+
+
+def large_files_py(root, min_bytes):
+    """[(size, mtime, path)] of files ≥ min_bytes under root, skipping Trash, node_modules, .git and links."""
+    out, dev = [], None
+    skip = {_c(t) for t in trash_roots()}
+    for d, dirs, files in os.walk(root):
+        try:
+            st = os.lstat(d)
+        except OSError:
+            continue
+        dev = st.st_dev if dev is None else dev
+        if st.st_dev != dev:
+            dirs.clear()
+            continue
+        dirs[:] = [x for x in dirs if x not in ("node_modules", ".git") and _c(os.path.join(d, x)) not in skip
+                   and not os.path.islink(os.path.join(d, x))]
+        for f in files:
+            p = os.path.join(d, f)
+            try:
+                fst = os.lstat(p)
+            except OSError:
+                continue
+            if stat.S_ISREG(fst.st_mode) and fst.st_size >= min_bytes:
+                out.append((file_size(fst), fst.st_mtime, p))
+    return out
 
 
 # ---------------------------------------------------------------- Docker
@@ -907,7 +1208,8 @@ class Docker(Category):
             if "permission denied" in msg:
                 self.notice = ("No permission to use Docker", "Add yourself to the “docker” group, then log in again.", None)
             else:
-                self.notice = ("Docker isn’t running", "Start it to see how much space it uses. You’ll be asked for your password.", "start")
+                self.notice = ("Docker isn’t running", "Start it to see how much space it uses." +
+                               (" You’ll be asked for your password." if IS_LINUX else ""), "start")
             return []
         df = {}
         r = run(["docker", "system", "df", "--format", "{{json .}}"], timeout=120)
@@ -966,7 +1268,27 @@ class Docker(Category):
 
 
 def start_docker():
+    if IS_WIN:
+        exe = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Docker", "Docker", "Docker Desktop.exe")
+        if not os.path.exists(exe):
+            return subprocess.CompletedProcess([exe], 1, "", "Docker Desktop isn’t installed")
+        subprocess.Popen([exe], **NO_WINDOW)
+        return _wait_docker()
+    if IS_MAC:
+        r = run(["open", "-a", "Docker"], timeout=30)
+        return r if r.returncode else _wait_docker()
     return run(["pkexec", "systemctl", "start", "docker.socket", "docker.service"], timeout=300)
+
+
+def _wait_docker(limit=120):
+    """Docker Desktop takes a while to come up."""
+    end = time.time() + limit
+    while time.time() < end:
+        r = run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=15)
+        if r.returncode == 0:
+            return r
+        time.sleep(3)
+    return subprocess.CompletedProcess(["docker"], 1, "", "Docker didn’t start in time")
 
 
 # ---------------------------------------------------------------- system (root via pkexec)
@@ -979,6 +1301,7 @@ class System(Category):
             "the system dialog.")
     safety, method, needs_root = "safe", "permanent", True
     group_order = ("Safe to remove", "Check first")
+    platforms = ("linux",)          # apt, snap, journald
 
     def scan(self, progress=None):
         items = []
@@ -1031,7 +1354,8 @@ class System(Category):
         return items
 
 
-CATEGORIES = [AppCaches, DevCaches, Trash, NodeModules, BuildLeftovers, Docker, Downloads, LargeFiles, System]
+ALL_CATEGORIES = [AppCaches, DevCaches, Trash, NodeModules, BuildLeftovers, Docker, Downloads, LargeFiles, System]
+CATEGORIES = [C for C in ALL_CATEGORIES if PLATFORM in C.platforms]
 
 
 # ---------------------------------------------------------------- cleaning
@@ -1050,7 +1374,11 @@ def clean_items(items, mode="trash", progress=None):
         try:
             if it.kind == "path":
                 for p in it.paths:
-                    remove_path(p, mode)
+                    try:
+                        remove_path(p, mode)
+                    except (OSError, GLib.Error):
+                        if not it.best_effort:
+                            raise
                 if mode == "trash":
                     res["trashed"] += it.size
                     res["trashed_paths"] += it.paths
@@ -1125,6 +1453,9 @@ class FolderSizes:
         self.root, self.sizes, self.ready = root, {}, False
 
     def scan(self):
+        if not HAVE_GNU_DU:
+            self.sizes, self.ready = folder_sizes_py(self.root, 5 << 20), True
+            return self.sizes
         try:
             low = ["nice", "-n", "10"] + (["ionice", "-c3"] if shutil.which("ionice") else [])
             r = subprocess.run(low + ["du", "-x", "-B1", "-0", "-t", "5M", self.root], capture_output=True, timeout=3600)
@@ -1182,3 +1513,24 @@ class FolderSizes:
                 break
             d = os.path.dirname(d)
 
+
+def folder_sizes_py(root, min_bytes):
+    """{folder: bytes} for every folder ≥ min_bytes under root, from one bottom-up walk (no GNU du)."""
+    sizes, dev = {}, None
+    for d, dirs, files in os.walk(root, topdown=False):
+        try:
+            st = os.lstat(d)
+        except OSError:
+            continue
+        dev = st.st_dev if dev is None else dev
+        if st.st_dev != dev or _is_link(d, st):
+            continue
+        total = 0
+        for f in files:
+            try:
+                total += file_size(os.lstat(os.path.join(d, f)))
+            except OSError:
+                pass
+        total += sum(sizes.get(os.path.join(d, x), 0) for x in dirs)
+        sizes[d] = total
+    return {p: n for p, n in sizes.items() if n >= min_bytes or p == root}

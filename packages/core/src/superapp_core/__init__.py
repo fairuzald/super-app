@@ -13,4 +13,4 @@ __all__ = [
     "Action", "AppBridge", "AppPlugin", "Launcher", "ManifestError", "Meter", "MeterKind", "Notifier",
     "Platform", "Plugin", "PluginContext", "PluginManifest", "QuickAction", "Scheduler", "ToolStatus",
 ]
-__version__ = "1.0.0"
+__version__ = "1.1.0"

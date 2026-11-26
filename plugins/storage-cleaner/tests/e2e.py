@@ -250,11 +250,11 @@ def tests():
         res_head = ui(lambda: dialog().get_heading())
         shot("05-result")
         gone = not any(os.path.exists(S(".cache", n)) for n in ("pip", "yarn", "thumbnails"))
-        in_trash = {os.path.basename(e[1]) for e in core.trash_entries()} >= {"pip", "yarn", "thumbnails"}
+        in_trash = {os.path.basename(e[2]) for e in core.trash_entries()} >= {"pip", "yarn", "thumbnails"}
         kept = os.path.exists(S(".cache", "mystery-app"))
         ui(answer, "empty")
-        wait(lambda: not any(os.path.basename(e[1]) == "yarn" for e in core.trash_entries()), 20)
-        left = {os.path.basename(e[1]) for e in core.trash_entries()}
+        wait(lambda: not any(os.path.basename(e[2]) == "yarn" for e in core.trash_entries()), 20)
+        left = {os.path.basename(e[2]) for e in core.trash_entries()}
         emptied = not ({"pip", "yarn", "thumbnails"} & left) and "old-draft.txt" in left
         ok = has == (True, True) and "pip" in body and gone and in_trash and kept and emptied and "Trash" in res_head
         return ok, (f"buttons trash/delete={has}, removed={gone}, went to Trash={in_trash}, untouched kept={kept}, "

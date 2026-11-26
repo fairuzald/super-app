@@ -1,5 +1,5 @@
 [Unit]
-Description=Phone Connect display keeper (laptop 100% scale, max refresh, remembered layouts)
+Description=Device Connect display keeper (laptop 100% scale, max refresh, remembered layouts)
 PartOf=graphical-session.target
 After=graphical-session.target
 

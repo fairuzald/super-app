@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Phone Connect - pair, connect and mirror an Android phone over Wi-Fi (adb + scrcpy).
+"""Device Connect - pair, connect and mirror an Android phone over Wi-Fi (adb + scrcpy).
 
 Discovery uses the system avahi daemon (D-Bus), pairing uses Android's
 "Pair device with QR code", mirroring uses scrcpy.
@@ -14,6 +14,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import companion  # noqa: E402  (tablet control panel / monitor / drawing pad)
 import display  # noqa: E402  (tablet as an extra monitor)
+import osdeps  # noqa: E402  (what differs on Linux / Windows / macOS)
+from osdeps import FEATURES, IS_LINUX, NO_WINDOW  # noqa: E402
 
 APP_ID = "local.fairuz.PhoneConnect"
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
@@ -31,9 +33,8 @@ def write_status(state):
         os.replace(tmp, STATUS)
     except OSError:
         pass
-_SDK_ADB = os.path.expanduser("~/Android/Sdk/platform-tools/adb")
 # Prefer Google's SDK adb: the older distro adb drops Wi-Fi debugging connections.
-ADB = _SDK_ADB if os.access(_SDK_ADB, os.X_OK) else (shutil.which("adb") or _SDK_ADB)
+ADB = osdeps.find_adb()
 # adb must not reconnect the phone on its own (it would survive "disconnect" and app close)
 os.environ["ADB_MDNS_AUTO_CONNECT"] = "0"
 KEEP_ON_S = 4 * 60 * 60      # phone never sleeps while mirroring (scrcpy restores the timeout itself)
@@ -64,7 +65,7 @@ def save_cfg(cfg):
 
 def adb(*args, timeout=15):
     try:
-        p = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=timeout, **NO_WINDOW)
         return (p.stdout + p.stderr).strip()
     except subprocess.TimeoutExpired:
         return "Timed out"
@@ -265,8 +266,9 @@ class PairDialog(Adw.Dialog):
         try:
             fd, path = tempfile.mkstemp(suffix=".png")
             os.close(fd)
-            subprocess.run(["qrencode", "-t", "PNG", "-s", "8", "-m", "2", "-o", path, text],
-                           check=True, timeout=5)
+            if not osdeps.write_qr_png(text, path):
+                os.unlink(path)
+                raise OSError("no QR encoder")
             pic.set_filename(path)
             pic.set_size_request(240, 240)
             GLib.timeout_add_seconds(2, lambda: (os.unlink(path), False)[1])
@@ -919,8 +921,8 @@ DEFAULTS = {
     "rec_audio": True,
     "cam_res": 1,            # 720p / 1080p
 }
-PICS = os.path.expanduser("~/Pictures/Phone")
-VIDS = os.path.expanduser("~/Videos/Phone")
+PICS = osdeps.pictures_dir()
+VIDS = osdeps.videos_dir()
 WEBCAM_SETUP = (
     "set -e; "
     "echo 'options v4l2loopback devices=1 video_nr=42 card_label=\"Phone Camera\" exclusive_caps=1' "
@@ -942,12 +944,22 @@ def webcam_device():
     return None
 
 
+def gnome_schema(schema):
+    """Gio.Settings aborts the process for a missing schema, so check first (no GNOME on Windows/macOS)."""
+    src = Gio.SettingsSchemaSource.get_default()
+    return bool(src and src.lookup(schema, True))
+
+
 def gsconnect_enabled():
+    if not gnome_schema("org.gnome.shell"):
+        return False
     return GSCONNECT in Gio.Settings.new("org.gnome.shell").get_strv("enabled-extensions")
 
 
 def gsconnect_state():
     """missing | off (installed, turned off) | needs-login (on, loads after re-login) | ready (running)."""
+    if not FEATURES["notifications"] or not gnome_schema("org.gnome.shell"):
+        return "missing"
     installed = any(os.path.exists(os.path.join(b, GSCONNECT, "metadata.json")) for b in
                     ("/usr/share/gnome-shell/extensions", os.path.expanduser("~/.local/share/gnome-shell/extensions")))
     if not installed:
@@ -971,7 +983,7 @@ def set_gsconnect(on):
 
 
 def open_path(path):
-    Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(path).get_uri(), None)
+    osdeps.open_path(path)
 
 
 def svg_picture(name, w, h):
@@ -1013,7 +1025,7 @@ class FindHeader(Gtk.Box):
 
 class Win(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Phone Connect", default_width=480, default_height=820)
+        super().__init__(application=app, title="Device Connect", default_width=480, default_height=820)
         self.cfg = load_cfg()
         self.cfg.pop("manual_off", None)
         if "audio" in self.cfg:              # migrate the old on/off sound setting
@@ -1029,7 +1041,9 @@ class Win(Adw.ApplicationWindow):
         save_cfg(self.cfg)
         if not self.opt("auto_connect"):
             self.cfg["manual_off"] = True    # wait for "Search again"
-        self.avahi = Avahi()
+        self.avahi = Avahi() if IS_LINUX else None
+        if not (self.avahi and self.avahi.ok):     # no avahi (Windows, macOS, or the daemon is off): use adb's mDNS
+            self.avahi = osdeps.AdbMdns(lambda: ADB)
         self.services = {}      # mDNS name -> "ip:port"
         self.errors = {}          # phone key -> 'refused' / 'unpaired'
         self.connecting = None
@@ -1059,7 +1073,7 @@ class Win(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay()
         tv = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        self.wtitle = Adw.WindowTitle(title="Phone Connect")
+        self.wtitle = Adw.WindowTitle(title="Device Connect")
         header.set_title_widget(self.wtitle)
         menu = Gio.Menu()
         menu.append("Your phones", "win.phones")
@@ -1098,7 +1112,7 @@ class Win(Adw.ApplicationWindow):
     # ================================================================ pages
     def build_setup_page(self):
         p = Adw.StatusPage(icon_name="system-software-install-symbolic", title="One-time setup",
-                           description="Phone Connect needs the free “scrcpy” tool to show your phone.")
+                           description="Device Connect needs the free “scrcpy” tool to show your phone.")
         b = Gtk.Button(label="Install", halign=Gtk.Align.CENTER, css_classes=["pill", "suggested-action"])
         b.connect("clicked", self.install_scrcpy)
         self.install_btn = b
@@ -1259,7 +1273,10 @@ class Win(Adw.ApplicationWindow):
                           "The device mic as a laptop input", self.toggle_mic)
         self.t_spk = Tile("audio-speakers-symbolic", "c-orange", "Use as speaker",
                           "Laptop sound plays on the device", self.toggle_speaker)
-        self.section(col, "Camera & audio", [self.t_cam, self.t_flip, self.t_mic, self.t_spk], "camera-web-symbolic")
+        media = ([self.t_cam, self.t_flip] if FEATURES["webcam"] else []) + \
+            ([self.t_mic, self.t_spk] if FEATURES["audio_bridge"] else [])
+        if media:
+            self.section(col, "Camera & audio", media, "camera-web-symbolic")
 
         self.t_send = Tile("document-send-symbolic", "c-orange", "Send files",
                            "Or drop files on this window", self.choose_files)
@@ -1269,7 +1286,9 @@ class Win(Adw.ApplicationWindow):
 
         self.t_notif = Tile("preferences-system-notifications-symbolic", "c-pink", "Notifications & SMS",
                             "Phone alerts on the laptop (GSConnect)", self.gsconnect)
-        self.adb_only += self.section(col, "Notifications", [self.t_notif], "preferences-system-notifications-symbolic")
+        if FEATURES["notifications"]:
+            self.adb_only += self.section(col, "Notifications", [self.t_notif],
+                                          "preferences-system-notifications-symbolic")
 
         self.t_panel = Tile("preferences-desktop-apps-symbolic", "c-blue", "Control panel",
                             "Volume, media, brightness and app buttons for the laptop",
@@ -1291,8 +1310,9 @@ class Win(Adw.ApplicationWindow):
                            "Use it as another monitor for the laptop", self.extra_display)
         self.t_lan = Tile("network-wireless-symbolic", "c-blue", "Wi-Fi link",
                           "Use these on a tablet without a cable", self.lan_setup)
-        self.section(col, "Second screen", [self.t_disp, self.t_panel, self.t_monitor, self.t_pad, self.t_lan],
-                     "tablet-symbolic", show_on)
+        second = [t for t, ok in ((self.t_disp, FEATURES["extra_display"]), (self.t_panel, True),
+                                  (self.t_monitor, True), (self.t_pad, FEATURES["pen"]), (self.t_lan, True)) if ok]
+        self.section(col, "Second screen", second, "tablet-symbolic", show_on)
         self.screen_hint = Gtk.Label(xalign=0, wrap=True, css_classes=["dim-label", "caption"], visible=False)
         col.append(self.screen_hint)
         scroll.set_vexpand(True)
@@ -1374,9 +1394,11 @@ class Win(Adw.ApplicationWindow):
         switch(g, "auto_connect", "Connect automatically",
                "Connect to your phone as soon as the app opens and finds it on Wi-Fi.",
                "network-wireless-symbolic")
-        g = group(p, "Phone notifications")
+        g = group(p, "Phone notifications") if FEATURES["notifications"] else None
         state = gsconnect_state()
-        if state == "missing":
+        if g is None:
+            pass
+        elif state == "missing":
             r = Adw.ActionRow(title="Notifications & SMS", subtitle="Not set up yet — use the tile on the main screen.",
                               use_markup=False)
             r.add_prefix(Gtk.Image(icon_name="preferences-system-notifications-symbolic"))
@@ -1391,7 +1413,8 @@ class Win(Adw.ApplicationWindow):
         g = group(p, "Recording & webcam")
         switch(g, "rec_audio", "Record phone sound", "Include sound in screen recordings.",
                "media-record-symbolic")
-        combo(g, "cam_res", "Webcam resolution", None, ["720p", "1080p"], "camera-web-symbolic")
+        if FEATURES["webcam"]:
+            combo(g, "cam_res", "Webcam resolution", None, ["720p", "1080p"], "camera-web-symbolic")
         g = group(p, "Saved files")
         for title, path in (("Screenshots & photos", PICS), ("Screen recordings", VIDS)):
             r = Adw.ActionRow(title=title, subtitle=path.replace(os.path.expanduser("~"), "~"),
@@ -1522,7 +1545,7 @@ class Win(Adw.ApplicationWindow):
         return p is not None and p.poll() is None
 
     def refresh(self):
-        if not (os.path.exists(ADB) and shutil.which("scrcpy")):
+        if not (os.path.exists(ADB) and osdeps.find_scrcpy()):
             self.stack.set_visible_child_name("setup")
             self.wtitle.set_subtitle("")
             return
@@ -2061,16 +2084,25 @@ class Win(Adw.ApplicationWindow):
                        timeout=6))
 
     def install_scrcpy(self, *_):
+        how, cmd = osdeps.scrcpy_install()
+        if cmd is None:                          # nothing we can run for the user: tell them how
+            self.toast(how)
+            return
         self.install_btn.set_sensitive(False)
-        pkgs = ["scrcpy"] + ([] if os.path.exists(ADB) else ["adb"])
 
         def done(rc):
             global ADB
-            ADB = ADB if os.path.exists(ADB) else (shutil.which("adb") or ADB)
+            ADB = osdeps.find_adb()
             self.install_btn.set_sensitive(True)
             self.toast("Installed" if rc == 0 else "Install cancelled or failed")
             self.poll()
-        bg(lambda: subprocess.call(["pkexec", "apt-get", "install", "-y", *pkgs]), done)
+
+        def work():
+            try:
+                return subprocess.call(cmd, **NO_WINDOW)
+            except OSError:
+                return 1
+        bg(work, done)
 
     # ================================================================ scrcpy sessions
     def android_ver(self):
@@ -2090,7 +2122,7 @@ class Win(Adw.ApplicationWindow):
         return v is None or v >= 12
 
     def base_cmd(self):
-        return ["scrcpy", "-s", self.serial()]
+        return [osdeps.find_scrcpy() or "scrcpy", "-s", self.serial()]
 
     def window_opts(self):
         """Options shared by every window that shows the phone (mirror and app windows)."""
@@ -2129,7 +2161,7 @@ class Win(Adw.ApplicationWindow):
 
     def record_cmd(self):
         os.makedirs(VIDS, exist_ok=True)
-        self.record_path = os.path.join(VIDS, time.strftime("Phone-%Y%m%d-%H%M%S.mp4"))
+        self.record_path = os.path.join(VIDS, time.strftime("Phone-%Y%m%d-%H%M%S") + osdeps.record_ext())
         cmd = self.base_cmd() + ["--no-window", "--max-size=1920",   # needs the screen awake to record
                                  f"--record={self.record_path}"]
         # Record phone sound without silencing the phone; or record video only.
@@ -2148,7 +2180,7 @@ class Win(Adw.ApplicationWindow):
     def start_task(self, name, cmd, stdin=None):
         try:
             p = subprocess.Popen(cmd, env=dict(os.environ, ADB=ADB), stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.PIPE, text=stdin is None, stdin=stdin)
+                                 stderr=subprocess.PIPE, text=stdin is None, stdin=stdin, **NO_WINDOW)
         except Exception as e:
             self.toast(f"Could not start: {e}")
             return
@@ -2194,7 +2226,7 @@ class Win(Adw.ApplicationWindow):
                     p.stdin.close()
                 except OSError:
                     pass
-            p.send_signal(signal.SIGINT)
+            osdeps.stop_process(p)
 
     # ================================================================ features
     # ---- companion screen (tablet)
@@ -2224,9 +2256,9 @@ class Win(Adw.ApplicationWindow):
             if need_fw:
                 rc = subprocess.call(["pkexec", "sh", "-c",
                                       f"{ufw} allow from {subnet} to any port {companion.LAN_PORT} proto tcp "
-                                      f"comment 'Phone Connect Wi-Fi link' && "
+                                      f"comment 'Device Connect Wi-Fi link' && "
                                       f"{ufw} allow from {subnet} to any port {display.PORT} proto tcp "
-                                      f"comment 'Phone Connect extra display'"])
+                                      f"comment 'Device Connect extra display'"])
                 if rc:
                     return "Firewall not changed (cancelled) — the tablet can't reach the laptop yet"
             try:
@@ -2716,8 +2748,9 @@ class Win(Adw.ApplicationWindow):
 
         def work():
             try:
-                out = subprocess.run(["scrcpy", "-s", s, "--list-apps"], capture_output=True, text=True,
-                                     timeout=40, env=dict(os.environ, ADB=ADB)).stdout
+                out = subprocess.run([osdeps.find_scrcpy() or "scrcpy", "-s", s, "--list-apps"],
+                                     capture_output=True, text=True, timeout=40, env=dict(os.environ, ADB=ADB),
+                                     **NO_WINDOW).stdout
             except Exception:
                 return []
             apps = []
@@ -2838,7 +2871,7 @@ class Win(Adw.ApplicationWindow):
                     name = os.path.basename(p.rstrip("/"))
                     adb("-s", s, "shell", "am", "broadcast", "-a",
                         "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-                        "-d", f"file:///sdcard/Download/{name}", timeout=5)
+                        "-d", shlex.quote(f"file:///sdcard/Download/{name}"), timeout=5)   # adb shell joins args
             return ok
         bg(work, lambda ok: self.toast(f"Sent {ok} of {len(paths)} to the phone’s Download folder"))
 
@@ -2895,7 +2928,7 @@ class Win(Adw.ApplicationWindow):
         # 1. mirror, app windows, webcam, recording: ask nicely (recordings finish saving), then force
         procs = [p for p in self.tasks.values() if p.poll() is None]
         for p in procs:
-            p.send_signal(signal.SIGINT)
+            osdeps.stop_process(p)
         deadline = time.time() + 6
         for p in procs:
             try:
@@ -2903,7 +2936,7 @@ class Win(Adw.ApplicationWindow):
             except subprocess.TimeoutExpired:
                 p.kill()
         for p in subprocess.run(["pgrep", "-f", f"scrcpy -s {self.serial()}"], capture_output=True,
-                                text=True).stdout.split() if self.serial() else []:
+                                text=True).stdout.split() if self.serial() and not osdeps.IS_WIN else []:
             try:
                 os.kill(int(p), signal.SIGTERM)  # any session started here that slipped through
             except (OSError, ValueError):
@@ -2948,10 +2981,18 @@ class App(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)   # glow theme is dark
-        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):   # logout / kill: clean up too
-            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self.on_signal)
+        if hasattr(GLib, "unix_signal_add") and not osdeps.IS_WIN:
+            for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):   # logout / kill: clean up too
+                GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, self.on_signal)
         Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(ASSETS)
-        Gtk.Window.set_default_icon_name("phone-connect")
+        Gtk.Window.set_default_icon_name("device-connect")
+        # Actions the Super App hub can start directly (over D-Bus, org.gtk.Actions)
+        for name, fn in (("show-screen", lambda w: w.serial() and not w.running("mirror")
+                          and w.toggle("mirror", w.mirror_cmd)),
+                         ("send-files", lambda w: w.choose_files())):
+            act = Gio.SimpleAction.new(name, None)
+            act.connect("activate", lambda *_a, f=fn: f(self.props.active_window or Win(self)))
+            self.add_action(act)
 
     def on_signal(self):
         win = self.props.active_window
@@ -2960,14 +3001,6 @@ class App(Adw.Application):
         else:
             self.quit()
         return GLib.SOURCE_REMOVE
-
-        # Actions the Super App hub can start directly (over D-Bus, org.gtk.Actions)
-        for name, fn in (("show-screen", lambda w: w.serial() and not w.running("mirror")
-                          and w.toggle("mirror", w.mirror_cmd)),
-                         ("send-files", lambda w: w.choose_files())):
-            act = Gio.SimpleAction.new(name, None)
-            act.connect("activate", lambda *_a, f=fn: f(self.props.active_window or Win(self)))
-            self.add_action(act)
 
     def do_activate(self):
         (self.props.active_window or Win(self)).present()

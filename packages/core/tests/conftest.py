@@ -50,7 +50,7 @@ class FakeNotifier:
 def ctx(tmp_path):
     paths = Paths(config=tmp_path / "config", cache=tmp_path / "cache", data=tmp_path / "data")
     return PluginContext(platform=Platform.LINUX, paths=paths, bridge=FakeBridge(), launcher=FakeLauncher(),
-                         scheduler=FakeScheduler(), notifier=FakeNotifier(), python="python3")
+                         scheduler=FakeScheduler(), notifier=FakeNotifier(), script_runner=("python3",))
 
 
 def make_plugin(base: Path, pid: str, body: str = "", **manifest) -> Path:

@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   core:
     name: Core tests (${{ matrix.os }})
@@ -29,7 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install GTK4 + libadwaita
-        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+        run: sudo apt-get update && sudo apt-get install -y python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pytest qrencode
+      - name: Plugin tests (cleaner core, companion server security, adb discovery)
+        run: /usr/bin/python3 -m pytest -q plugins/storage-cleaner/tests/test_core.py plugins/device-connect/tests/test_companion.py plugins/device-connect/tests/test_osdeps.py
       - name: Byte-compile everything (incl. the tool apps)
         run: /usr/bin/python3 -m compileall -q packages plugins bin
       - run: packaging/linux/build-deb.sh
@@ -45,3 +50,7 @@ jobs:
   windows:
     name: Windows installer
     uses: ./.github/workflows/windows.yml
+
+  macos:
+    name: macOS app
+    uses: ./.github/workflows/macos.yml

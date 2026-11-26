@@ -46,8 +46,8 @@ for p in "$ROOT"/plugins/*/; do
   done
   find "$p/app/assets" -maxdepth 1 -name 'local.fairuz.*.svg' -exec cp {} "$STAGE/usr/share/icons/hicolor/scalable/apps/" \; 2>/dev/null || true
 done
-[ -f "$ROOT/plugins/phone-connect/app/assets/phone-connect.svg" ] && \
-  cp "$ROOT/plugins/phone-connect/app/assets/phone-connect.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/local.fairuz.PhoneConnect.svg"
+[ -f "$ROOT/plugins/device-connect/app/assets/device-connect.svg" ] && \
+  cp "$ROOT/plugins/device-connect/app/assets/device-connect.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/local.fairuz.PhoneConnect.svg"
 
 SIZE="$(du -sk "$STAGE/usr" | cut -f1)"
 cat > "$STAGE/DEBIAN/control" <<EOF
@@ -62,7 +62,7 @@ Recommends: adb, scrcpy, ffmpeg, qrencode
 Suggests: v4l2loopback-dkms, gnome-remote-desktop
 Maintainer: Super App contributors <noreply@github.com>
 Description: All your desktop tools in one place, with plugins
- A GTK4 hub that shows a live card per plugin. Ships with Phone Connect
+ A GTK4 hub that shows a live card per plugin. Ships with Device Connect
  (Android mirroring, webcam, second screen) and Storage Cleaner.
 EOF
 cat > "$STAGE/DEBIAN/postinst" <<'EOF'

@@ -1,0 +1,9 @@
+id = "device-connect"
+name = "Device Connect"
+version = "1.1.0"
+description = "Mirror, control and share files with your Android phone or tablet over Wi-Fi."
+entry = "plugin.py:DeviceConnectPlugin"
+platforms = ["linux", "windows", "macos"]   # Linux-only extras (webcam, mic, GNOME) are hidden elsewhere
+color = "#22d3ee"
+icon = "app/assets/device-connect.svg"
+order = 10

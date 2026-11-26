@@ -36,6 +36,10 @@ class DBusBridge:
             return False
 
     def activate(self, app_id: str, action: str) -> None:
-        self._bus().call(app_id, "/" + app_id.replace(".", "/"), "org.gtk.Actions", "Activate",
+        try:
+            bus = self._bus()
+        except GLib.Error:
+            return                                      # no session bus (e.g. macOS without dbus)
+        bus.call(app_id, "/" + app_id.replace(".", "/"), "org.gtk.Actions", "Activate",
                          GLib.Variant("(sava{sv})", (action, [], {})), None, Gio.DBusCallFlags.NONE, 3000,
                          None, None, None)

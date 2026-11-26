@@ -15,7 +15,7 @@ from superapp_core import Platform, PluginContext  # noqa: E402
 from superapp_core.loader import PluginDiscovery, PluginFactory  # noqa: E402
 from superapp_core.paths import Paths  # noqa: E402
 from superapp_core.registry import PluginRegistry  # noqa: E402
-from superapp_core.services import NullBridge, ProcessLauncher, find_python  # noqa: E402
+from superapp_core.services import ProcessLauncher, script_runner  # noqa: E402
 from superapp_core.settings import Settings  # noqa: E402
 
 from .gtk_services import DBusBridge, GLibScheduler, ToastNotifier  # noqa: E402
@@ -41,9 +41,9 @@ def bundled_plugin_dirs() -> list[Path]:
 def build_registry(platform: Platform, paths: Paths, notifier) -> PluginRegistry:
     context = PluginContext(
         platform=platform, paths=paths,
-        bridge=DBusBridge() if platform is Platform.LINUX else NullBridge(),
+        bridge=DBusBridge(),            # GApplication actions; without a session bus: "not running"
         launcher=ProcessLauncher(), scheduler=GLibScheduler(), notifier=notifier,
-        python=find_python(platform))
+        script_runner=script_runner(platform))
     extra = [Path(p) for p in os.environ.get("SUPERAPP_PLUGINS", "").split(os.pathsep) if p]
     discovery = PluginDiscovery([*extra, paths.user_plugins, *bundled_plugin_dirs()])
     registry = PluginRegistry(discovery, PluginFactory(context), Settings(paths.settings_file), platform)
@@ -89,7 +89,26 @@ def check() -> int:
     return 0 if ok else 1
 
 
+def run_script(path: str) -> int:
+    """`super-app --run-script tool.py`: run a bundled plugin tool with the app's own Python and GTK.
+
+    Only scripts inside a known plugin folder are run, so the installed app can't be used to start
+    arbitrary code by path.
+    """
+    import runpy
+    target = Path(path).resolve()
+    allowed = [*bundled_plugin_dirs(), Paths.for_platform(Platform.current()).user_plugins]
+    if not any(d.resolve() in target.parents for d in allowed if d.is_dir()) or target.suffix != ".py":
+        print(f"not a bundled plugin script: {path}", file=sys.stderr)
+        return 2
+    sys.argv = [str(target)]
+    runpy.run_path(str(target), run_name="__main__")
+    return 0
+
+
 def main() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "--run-script":
+        return run_script(sys.argv[2])
     if "--check" in sys.argv[1:]:
         return check()
     return HubApplication().run([a for a in sys.argv if a != "--check"])

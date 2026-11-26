@@ -1,9 +1,9 @@
 id = "storage-cleaner"
 name = "Storage Cleaner"
-version = "1.0.0"
+version = "1.1.0"
 description = "See what fills your disk and free space safely."
 entry = "plugin.py:StorageCleanerPlugin"
-platforms = ["linux"]          # knows Linux caches, apt/journal, Docker, Trash spec
+platforms = ["linux", "windows", "macos"]   # "System cleanup" (apt, snap, journal) is Linux-only
 color = "#4f8cff"
 icon = "app/assets/local.fairuz.StorageCleaner.svg"
 order = 20

@@ -46,7 +46,7 @@ class MyPlugin(Plugin):
 ```
 
 `self.ctx` (`PluginContext`) gives you `platform`, `paths` (config/cache/data per OS), `launcher`, `bridge`,
-`scheduler`, `notifier` and `python`. Use those instead of importing GTK, so the plugin stays testable and portable.
+`scheduler`, `notifier` and `script_runner`. Use those instead of importing GTK, so the plugin stays testable and portable.
 Icons are freedesktop/Adwaita icon names.
 
 ## A plugin that is its own app

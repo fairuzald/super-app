@@ -1,4 +1,4 @@
-"""Hub card for Phone Connect. The app itself lives in app/ and runs on its own."""
+"""Hub card for Device Connect. The app itself lives in app/ and runs on its own."""
 from superapp_core import Action, AppPlugin, Meter, MeterKind, QuickAction, ToolStatus
 from superapp_core.paths import read_json
 
@@ -6,9 +6,9 @@ SHOW = Action("Show screen", "phone-symbolic", "show-screen")
 SEND = Action("Send", "send-to-symbolic", "send-files")
 
 
-class PhoneConnectPlugin(AppPlugin):
+class DeviceConnectPlugin(AppPlugin):
     app_id = "local.fairuz.PhoneConnect"
-    script = "app/phone-connect.py"
+    script = "app/device-connect.py"
 
     def _state(self) -> dict:
         """Written by the app: model, battery, charging, how (Wi-Fi/USB), mirror."""
@@ -41,6 +41,6 @@ class PhoneConnectPlugin(AppPlugin):
 
     def open(self, action=None):
         if action == "show-screen" and not self.connected():
-            self.ctx.notifier.notify("Connect your phone in Phone Connect first")
+            self.ctx.notifier.notify("Connect your phone in Device Connect first")
             action = None
         super().open(action)

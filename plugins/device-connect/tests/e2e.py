@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""End-to-end checks for Phone Connect against a real phone on Wi-Fi.
+"""End-to-end checks for Device Connect against a real phone on Wi-Fi.
 
 Run:  timeout -k 10 600 /usr/bin/python3 tests/e2e.py
 The phone will lock/unlock and phone windows will open and close while it runs.
@@ -8,7 +8,7 @@ Your settings and the phone's screen timeout are put back at the end.
 import importlib.util, json, os, signal, subprocess, sys, threading, time, traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("pc", os.path.join(HERE, "..", "app", "phone-connect.py"))
+spec = importlib.util.spec_from_file_location("pc", os.path.join(HERE, "..", "app", "device-connect.py"))
 pc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pc)
 from gi.repository import GLib  # noqa: E402

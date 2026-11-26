@@ -1,9 +1,0 @@
-id = "phone-connect"
-name = "Phone Connect"
-version = "1.0.0"
-description = "Mirror, control and share files with your Android phone or tablet over Wi-Fi."
-entry = "plugin.py:PhoneConnectPlugin"
-platforms = ["linux"]          # scrcpy + PipeWire + v4l2loopback + GNOME display APIs
-color = "#22d3ee"
-icon = "app/assets/phone-connect.svg"
-order = 10

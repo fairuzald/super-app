@@ -36,13 +36,17 @@ class NullBridge:
         return None
 
 
-def find_python(platform: Platform) -> str:
-    """The interpreter for script tools. Frozen builds have no usable sys.executable, so look on PATH."""
+def script_runner(platform: Platform) -> tuple[str, ...]:
+    """How to start a plugin tool that is a Python script.
+
+    Installed builds (Windows .exe, macOS .app) bundle Python and GTK inside the app, so the app runs the
+    script itself (`super-app --run-script tool.py`). From source on Linux, the system Python has GTK.
+    """
+    if getattr(sys, "frozen", False):
+        return (sys.executable, "--run-script")
     if platform is Platform.LINUX and os.access("/usr/bin/python3", os.X_OK):
-        return "/usr/bin/python3"            # the system Python has the GTK bindings
-    if not getattr(sys, "frozen", False):
-        return sys.executable
-    return shutil.which("python3") or shutil.which("python") or "python3"
+        return ("/usr/bin/python3",)
+    return (sys.executable or shutil.which("python3") or "python3",)
 
 
 def open_in_file_manager(path: str) -> bool:

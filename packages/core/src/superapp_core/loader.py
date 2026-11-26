@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import os
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -34,6 +35,10 @@ class PluginDiscovery:
             if not base.is_dir():
                 continue
             for folder in sorted(p for p in base.iterdir() if (p / MANIFEST).is_file()):
+                unsafe = unsafe_permissions(folder)
+                if unsafe:
+                    issues.append(LoadIssue(str(folder), unsafe))
+                    continue
                 try:
                     m = PluginManifest.load(folder)
                 except ManifestError as e:
@@ -44,6 +49,19 @@ class PluginDiscovery:
                     continue
                 found[m.id] = m
         return sorted(found.values(), key=lambda m: (m.order, m.name.lower())), issues
+
+
+def unsafe_permissions(folder: Path) -> str:
+    """Plugins run as you, so refuse ones another user could change (POSIX; Windows uses folder ACLs)."""
+    if os.name != "posix":
+        return ""
+    for p in (folder, folder / MANIFEST):
+        st = p.stat()
+        if st.st_mode & 0o002:
+            return f"{p.name} is writable by everyone; fix with: chmod o-w '{p}'"
+        if st.st_uid not in (0, os.getuid()):
+            return f"{p.name} belongs to another user"
+    return ""
 
 
 class PluginFactory:

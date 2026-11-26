@@ -27,7 +27,7 @@ class PluginContext:
     launcher: Launcher
     scheduler: Scheduler
     notifier: Notifier
-    python: str                      # interpreter for tools written as Python scripts
+    script_runner: tuple[str, ...]   # how to run a tool written as a Python script: (python,) or (exe, "--run-script")
 
 
 class Plugin(ABC):
@@ -77,7 +77,7 @@ class AppPlugin(Plugin):
 
     def command(self) -> list[str]:
         path = str(self.script_path)
-        return [self.ctx.python, path] if path.endswith(".py") else [path]
+        return [*self.ctx.script_runner, path] if path.endswith(".py") else [path]
 
     def open(self, action: str | None = None) -> None:
         if not self.installed():

@@ -48,7 +48,22 @@
 
 ## Cross-platform
 
-`superapp_core` is pure Python (3.11+, `tomllib`) and is tested on Linux, Windows and macOS. The hub uses GTK4 +
-libadwaita, which runs on Windows via MSYS2; the Windows build bundles GTK with PyInstaller and ships an Inno Setup
-installer. OS-specific behaviour sits behind ports (`DBusBridge` vs `NullBridge`, `Paths.for_platform`,
-`ProcessLauncher`) or in plugins that declare `platforms`.
+`superapp_core` is pure Python (3.11+, `tomllib`) and is tested on Linux, Windows and macOS.
+
+**Packaging**
+- The hub uses GTK4 + libadwaita. Windows builds get it from MSYS2, macOS builds from Homebrew.
+- One PyInstaller spec bundles Python, GTK and the plugins:
+  - Windows: an Inno Setup installer;
+  - macOS: a `.app` inside a `.dmg`.
+- In those builds, plugin tools run through the app itself (`super-app --run-script tool.py`, chosen by
+  `services.script_runner`), so every tool shares the bundled GTK.
+
+**Where OS differences live**
+- Behind ports: `Paths.for_platform`, `ProcessLauncher`, `script_runner`, and `DBusBridge`, which reports
+  "not running" where there is no session bus.
+- Inside each plugin:
+  - Device Connect keeps them in `osdeps.py` (adb lookup, mDNS via adb when there's no avahi, a feature table)
+    and `laptop.py` (Windows/macOS stats and controls).
+  - Storage Cleaner keeps them in `cleaner_core.py` (cache folders, Trash / Recycle Bin, Python fallbacks for
+    `du`/`find`).
+- Features with no equivalent are hidden, not shown broken.

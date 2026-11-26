@@ -28,6 +28,17 @@ A GNOME app (GTK4 + libadwaita) that shows what fills your disk and frees space 
 - Root work goes through `pkexec`, so you type your password in the system dialog. Root commands are fixed argument lists from an allowlist (`apt-get`, `snap`, `journalctl`, `find`, `env`), shell-quoted, and snap names are validated first (`root_script()`).
 - Symlinks are removed, never followed.
 
+## Platforms
+
+Runs on Linux, Windows and macOS. Each one gets its own cache locations and Trash:
+
+- **Windows:** browser caches, Temp, the Recycle Bin, npm, pip, NuGet and other caches. Files still in use are
+  skipped.
+- **macOS:** `~/Library/Caches`, `~/Library/Logs` and `~/.Trash`. Seeing the Trash needs Full Disk Access.
+- **Linux:** "System cleanup" (apt cache, old snaps, journal) is Linux-only.
+
+Where GNU `du`/`find` are missing, the sizes come from a pure-Python walk instead.
+
 ## Install
 
 Part of Super App: run `packaging/linux/install.sh` from the repo root (or install the `.deb`).

@@ -10,7 +10,7 @@ PLUGINS = Path(__file__).resolve().parents[3] / "plugins"
 def test_every_bundled_manifest_is_valid():
     manifests, issues = PluginDiscovery([PLUGINS]).find()
     assert issues == []
-    assert {m.id for m in manifests} >= {"phone-connect", "storage-cleaner", "disk-space"}
+    assert {m.id for m in manifests} >= {"device-connect", "storage-cleaner", "disk-space"}
     for m in manifests:
         assert m.icon_path is None or m.icon_path.exists(), m.id
 
@@ -24,8 +24,8 @@ def test_every_bundled_plugin_builds_and_reports(ctx):
         plugin.quick_actions(st)
 
 
-def test_phone_connect_closed_shows_open_button(ctx):
-    m = next(m for m in PluginDiscovery([PLUGINS]).find()[0] if m.id == "phone-connect")
+def test_device_connect_closed_shows_open_button(ctx):
+    m = next(m for m in PluginDiscovery([PLUGINS]).find()[0] if m.id == "device-connect")
     st = PluginFactory(ctx).create(m).status()
     assert st.headline == "Off" and st.actions[0].id is None
 

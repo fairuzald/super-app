@@ -1,0 +1,29 @@
+name: macOS build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ""
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GTK4 + libadwaita (Homebrew)
+        run: |
+          brew install gtk4 libadwaita pygobject3 librsvg adwaita-icon-theme openssl
+          PY="$(brew --prefix)/bin/python3"
+          "$PY" -m pip install --break-system-packages pyinstaller segno pillow pytest
+          echo "PYTHON=$PY" >> "$GITHUB_ENV"
+      - name: Plugin tests on macOS (Trash, paths, companion server, adb discovery)
+        run: $PYTHON -m pytest -q plugins/storage-cleaner/tests/test_core.py plugins/device-connect/tests/test_companion.py plugins/device-connect/tests/test_osdeps.py
+      - name: Build the app and disk image
+        run: VERSION="${{ inputs.version }}" packaging/macos/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: super-app-macos
+          path: dist/Super-App-*.dmg

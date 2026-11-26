@@ -1,4 +1,4 @@
-"""Companion screen for Phone Connect: control panel, live monitor and drawing pad on a tablet or phone.
+"""Companion screen for Device Connect: control panel, live monitor and drawing pad on a tablet or phone.
 
 A tiny HTTP + WebSocket server listens on 127.0.0.1. The Android device reaches it through an
 `adb reverse` tunnel (works over USB and wireless debugging).
@@ -8,7 +8,6 @@ Every API call needs a secret token (kept in ~/.config, 0600) that is only given
 """
 import asyncio
 import base64
-import fcntl
 import glob
 import hashlib
 import json
@@ -20,10 +19,26 @@ import socket
 import ssl
 import struct
 import subprocess
+import sys
 import threading
 import time
 
 from gi.repository import Gio, GLib
+
+try:
+    import fcntl                     # Linux only: the uinput drawing pen
+except ImportError:
+    fcntl = None
+import laptop  # noqa: E402  (stats / controls on Windows and macOS)
+
+IS_LINUX = sys.platform.startswith("linux")
+NO_WINDOW = laptop.NO_WINDOW
+MAX_CLIENTS = 64                     # open connections at once (a page uses a few); stops a LAN flood
+SECURITY_HEADERS = (
+    "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nX-Frame-Options: DENY\r\n"
+    "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; "
+    "connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n")
 
 PORT = 47800
 LAN_PORT = 47801
@@ -78,9 +93,17 @@ def lan_cert(ip):
     except OSError:
         same = False
     if not same:
-        r = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
-                            "-subj", "/CN=Phone Connect", "-addext", f"subjectAltName=IP:{ip}",
-                            "-keyout", key, "-out", crt], capture_output=True, text=True, timeout=30)
+        cmd = ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+               "-subj", "/CN=Device Connect", "-addext", f"subjectAltName=IP:{ip}", "-keyout", key, "-out", crt]
+        if not IS_LINUX:             # the bundled openssl has no system openssl.cnf to read
+            cnf = os.path.join(LAN_DIR, "openssl.cnf")
+            with open(cnf, "w") as f:
+                f.write("[req]\ndistinguished_name=dn\n[dn]\n")
+            cmd += ["-config", cnf]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, **NO_WINDOW)
+        except OSError as e:
+            raise OSError("could not create the Wi-Fi certificate (is openssl installed?)") from e
         if r.returncode:
             raise OSError("could not create the Wi-Fi certificate: " + r.stderr[-200:])
         os.chmod(key, 0o600)
@@ -98,26 +121,34 @@ UINPUT_SETUP = (
     "udevadm control --reload-rules; udevadm trigger --name-match=uinput --action=change || "
     "udevadm trigger -s misc --action=change")
 
-DEFAULT_BUTTONS = [
-    {"label": "Terminal", "icon": "terminal", "command": "ptyxis --new-window"},
-    {"label": "VS Code", "icon": "code", "command": "/snap/bin/code"},
-    {"label": "Files", "icon": "folder", "command": "nautilus --new-window"},
-    {"label": "Chrome", "icon": "globe", "command": "google-chrome"},
-    {"label": "Projects", "icon": "briefcase", "command": "nautilus --new-window ~/Documents"},
-]
+DEFAULT_BUTTONS = laptop.DEFAULT_BUTTONS_WIN if laptop.IS_WIN else laptop.DEFAULT_BUTTONS_MAC \
+    if sys.platform == "darwin" else [
+        {"label": "Terminal", "icon": "terminal", "command": "ptyxis --new-window"},
+        {"label": "VS Code", "icon": "code", "command": "/snap/bin/code"},
+        {"label": "Files", "icon": "folder", "command": "nautilus --new-window"},
+        {"label": "Chrome", "icon": "globe", "command": "google-chrome"},
+        {"label": "Projects", "icon": "briefcase", "command": "nautilus --new-window ~/Documents"},
+    ]
 
 
 def run(cmd, timeout=4):
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, **NO_WINDOW)
         return p.returncode, (p.stdout + p.stderr).strip()
     except Exception as e:  # noqa: BLE001
         return 1, str(e)
 
 
 def panel_buttons():
-    """Custom launcher buttons; the file is created with examples on first use."""
+    """Custom launcher buttons; the file is created with examples on first use.
+
+    Its commands run as you when a button is tapped, so a file another user could edit is ignored.
+    """
     try:
+        if os.name == "posix":
+            st = os.stat(PANEL_CFG)
+            if st.st_mode & 0o022 or st.st_uid != os.getuid():
+                return []
         with open(PANEL_CFG) as f:
             data = json.load(f)
         return [b for b in data.get("buttons", []) if b.get("label") and b.get("command")]
@@ -252,10 +283,12 @@ class Stats:
 
 
 class Controls:
-    """Things the Control panel can read and change on the laptop."""
+    """Things the Control panel can read and change on the laptop (Linux / GNOME)."""
+    caps = {"vol_up", "vol_down", "vol_set", "mute", "mic", "play", "next", "prev", "bright_up", "bright_down",
+            "dark", "dnd", "night", "screenshot", "lock", "launch"}
 
     def __init__(self, app_actions):
-        self.app_actions = app_actions      # {"phone_screen": callable, ...} from Phone Connect
+        self.app_actions = app_actions      # {"phone_screen": callable, ...} from Device Connect
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION)
 
     # ---- audio (PipeWire)
@@ -335,6 +368,7 @@ class Controls:
             "night": self._gs("org.gnome.settings-daemon.plugins.color", "night-light-enabled") == "true",
             "buttons": [{"label": b["label"], "icon": b.get("icon", "app")} for b in panel_buttons()],
             "phone": self.app_actions.get("phone_state", lambda: {})(),
+            "caps": sorted(self.caps | set(self.app_actions)),
         }
 
     def act(self, action, arg=None):
@@ -393,7 +427,7 @@ XY_MAX, P_MAX = 32767, 4095
 
 
 def uinput_ready():
-    return os.access("/dev/uinput", os.W_OK)
+    return fcntl is not None and os.access("/dev/uinput", os.W_OK)
 
 
 class VirtualPen:
@@ -412,7 +446,7 @@ class VirtualPen:
             fcntl.ioctl(self.fd, UI_SET_ABSBIT, code)
         for code, lo, hi, res in axes:
             fcntl.ioctl(self.fd, UI_ABS_SETUP, struct.pack("H2x6i", code, 0, lo, hi, 0, 0, res))
-        name = b"Phone Connect Pen"
+        name = b"Device Connect Pen"
         fcntl.ioctl(self.fd, UI_DEV_SETUP, struct.pack("HHHH80sI", 0x06, 0x1d6b, 0x0104, 1, name, 0))
         fcntl.ioctl(self.fd, UI_DEV_CREATE)
         self.near = self.down = False
@@ -474,8 +508,12 @@ class CompanionServer:
         self.lan_seen = 0                   # last request from a device over Wi-Fi
         self.lan_device = None              # its model, from the browser's user agent
         self.want = None                    # (time, view): ask open pages to switch view
-        self.stats = Stats()
-        self.controls = Controls(app_actions)
+        if laptop.IS_WIN:
+            self.stats, self.controls = laptop.WindowsStats(), laptop.WindowsControls(app_actions, panel_buttons)
+        elif sys.platform == "darwin":
+            self.stats, self.controls = laptop.MacStats(), laptop.MacControls(app_actions, panel_buttons)
+        else:
+            self.stats, self.controls = Stats(), Controls(app_actions)
         self.pen = None
         self.loop = None
         self.thread = None
@@ -517,9 +555,11 @@ class CompanionServer:
         if self.lan_server:
             return self.lan_url(ip)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.load_cert_chain(crt, key)
+        # Only on the Wi-Fi address, not every interface (e.g. not a VPN or a second network card).
         fut = asyncio.run_coroutine_threadsafe(
-            asyncio.start_server(self.handle, "0.0.0.0", LAN_PORT, ssl=ctx), self.loop)
+            asyncio.start_server(self.handle, ip, LAN_PORT, ssl=ctx), self.loop)
         self.lan_server = fut.result(5)
         return self.lan_url(ip)
 
@@ -557,8 +597,20 @@ class CompanionServer:
 
     # ---- http
     async def handle(self, reader, writer):
+        if self.clients >= MAX_CLIENTS:
+            writer.close()
+            return
+        self.clients += 1
         try:
-            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 15)
+            await self._handle(reader, writer)
+        except Exception:  # noqa: BLE001 - a bad request must never take the server down
+            writer.close()
+        finally:
+            self.clients -= 1
+
+    async def _handle(self, reader, writer):
+        try:
+            head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 15)   # max 64 KiB of headers
         except Exception:  # noqa: BLE001
             writer.close()
             return
@@ -588,8 +640,17 @@ class CompanionServer:
             return
         body = b""
         if method == "POST":
-            n = min(int(headers.get("content-length", "0") or 0), 65536)
-            body = await reader.readexactly(n) if n else b""
+            if not authed:
+                await self.reply(writer, 403, b"forbidden", "text/plain")
+                return
+            try:
+                n = int(headers.get("content-length", "0") or 0)
+            except ValueError:
+                n = -1
+            if not 0 <= n <= 65536:
+                await self.reply(writer, 413, b"too large", "text/plain")
+                return
+            body = await asyncio.wait_for(reader.readexactly(n), 15) if n else b""
 
         if path == "/" and method == "GET":
             try:
@@ -605,22 +666,39 @@ class CompanionServer:
                 req = json.loads(body or b"{}")
             except ValueError:
                 req = {}
-            data = await asyncio.to_thread(self.controls.act, str(req.get("id", "")), req.get("arg"))
+            data = await asyncio.to_thread(self.safe_act, req.get("id", ""), req.get("arg"))
             await self.reply(writer, 200, json.dumps({"controls": data}).encode(), "application/json")
         else:
             await self.reply(writer, 404 if authed or path == "/" else 403, b"not found", "text/plain")
+
+    def safe_act(self, action, arg):
+        """Run a panel action only if this laptop supports it, with a well-formed argument."""
+        action = str(action)[:40]
+        caps = set(self.controls.caps) | set(self.controls.app_actions)
+        if action not in caps:
+            return self.controls.state()
+        if action in ("vol_set", "launch"):
+            try:
+                arg = int(arg)
+            except (TypeError, ValueError):
+                return self.controls.state()
+        else:
+            arg = None
+        return self.controls.act(action, arg)
 
     def full_state(self):
         want = self.want if self.want and time.time() - self.want[0] < 15 else None
         return {"stats": self.stats.snapshot(), "controls": self.controls.state(),
                 "pen_ready": uinput_ready(), "time": time.time(),
+                "features": {"pen": IS_LINUX, "media": IS_LINUX},
                 "want": {"id": want[0], "view": want[1]} if want else None}
 
     @staticmethod
     async def reply(writer, code, body, ctype):
-        status = {200: "OK", 403: "Forbidden", 404: "Not Found", 500: "Error"}.get(code, "OK")
+        status = {200: "OK", 403: "Forbidden", 404: "Not Found", 413: "Payload Too Large",
+                  500: "Error"}.get(code, "OK")
         writer.write(f"HTTP/1.1 {code} {status}\r\nContent-Type: {ctype}\r\nContent-Length: {len(body)}\r\n"
-                     f"Cache-Control: no-store\r\nConnection: close\r\n\r\n".encode() + body)
+                     f"Cache-Control: no-store\r\n{SECURITY_HEADERS}Connection: close\r\n\r\n".encode() + body)
         try:
             await writer.drain()
         finally:
@@ -794,13 +872,14 @@ class CompanionServer:
 def open_on_device(adb_path, serial, url):
     """Tunnel the port to the device and open the page full screen in its browser."""
     subprocess.run([adb_path, "-s", serial, "reverse", f"tcp:{PORT}", f"tcp:{PORT}"],
-                   capture_output=True, timeout=10)
+                   capture_output=True, timeout=10, **NO_WINDOW)
     subprocess.run([adb_path, "-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"],
-                   capture_output=True, timeout=10)
+                   capture_output=True, timeout=10, **NO_WINDOW)
     rc = subprocess.run([adb_path, "-s", serial, "shell", "am", "start", "-a", "android.intent.action.VIEW",
-                         "-d", shlex.quote(url)], capture_output=True, text=True, timeout=15)
+                         "-d", shlex.quote(url)], capture_output=True, text=True, timeout=15, **NO_WINDOW)
     return rc.returncode == 0 and "Error" not in rc.stdout + rc.stderr
 
 
 def close_on_device(adb_path, serial):
-    subprocess.run([adb_path, "-s", serial, "reverse", "--remove", f"tcp:{PORT}"], capture_output=True, timeout=8)
+    subprocess.run([adb_path, "-s", serial, "reverse", "--remove", f"tcp:{PORT}"], capture_output=True, timeout=8,
+                   **NO_WINDOW)
