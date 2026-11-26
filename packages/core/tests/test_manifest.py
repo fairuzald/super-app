@@ -34,5 +34,5 @@ def test_rejects_bad_manifests(bad):
 
 
 def test_icon_path_is_relative_to_root():
-    assert m(icon="a/b.svg").icon_path == ROOT / "a" / "b.svg"
+    assert m(icon="a/b.svg").icon_path == (ROOT / "a" / "b.svg").resolve()
     assert m().icon_path is None

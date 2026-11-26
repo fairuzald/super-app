@@ -52,7 +52,7 @@ PROJECT_ROOTS = [DOCS] + [H(n) for n in ("projects", "Projects", "code", "dev", 
 # Folders that must never be removed themselves (their contents may be).
 PROTECTED = {os.path.realpath(p) for p in (
     HOME, DOCS, DOWNLOADS, CACHE, CONFIG, TRASH, DATA_HOME, H(".local"), H(".local", "share"),
-    os.path.join(TRASH, "files"), os.path.join(TRASH, "info"), H("Desktop"), H("Pictures"),
+    TRASH and os.path.join(TRASH, "files"), TRASH and os.path.join(TRASH, "info"), H("Desktop"), H("Pictures"),
     H("Music"), H("Videos"), H("Templates"), H("Public"), H("snap"), H(".var"),
     # Windows and macOS homes
     H("AppData"), H("AppData", "Local"), H("AppData", "LocalLow"), H("AppData", "Roaming"), H("OneDrive"),
@@ -872,7 +872,13 @@ def read_trashinfo(info_path):
 def trash_entries():
     """[(data, meta, original path, deleted at)] for everything in your Trash / Recycle Bin."""
     out = []
-    if IS_WIN and not os.environ.get("SC_TRASH"):
+    if os.environ.get("SC_TRASH"):          # tests: a plain folder stands in for the Trash on every OS
+        root = os.environ["SC_TRASH"]
+        try:
+            return [(os.path.join(root, n), None, None, mtime(os.path.join(root, n))) for n in os.listdir(root)]
+        except OSError:
+            return []
+    if IS_WIN:
         for d in trash_roots():
             try:
                 names = os.listdir(d)
@@ -944,7 +950,7 @@ class Trash(Category):
             except OSError:
                 return []
         items = trash_items()
-        if not IS_LINUX:
+        if not IS_LINUX or os.environ.get("SC_TRASH"):
             return items
         exp = os.path.join(TRASH, "expunged")
         try:
