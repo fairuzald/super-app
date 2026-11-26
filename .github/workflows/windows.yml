@@ -51,7 +51,7 @@ jobs:
             $env:Path += ";${env:ProgramFiles(x86)}\Inno Setup 6"
           }
           iscc "/DAppVersion=$v" packaging\windows\installer.iss
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: super-app-windows
           path: dist/Super-App-Setup-*.exe
