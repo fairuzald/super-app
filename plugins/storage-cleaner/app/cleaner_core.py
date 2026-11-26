@@ -1521,22 +1521,35 @@ class FolderSizes:
 
 
 def folder_sizes_py(root, min_bytes):
-    """{folder: bytes} for every folder ≥ min_bytes under root, from one bottom-up walk (no GNU du)."""
-    sizes, dev = {}, None
-    for d, dirs, files in os.walk(root, topdown=False):
-        try:
-            st = os.lstat(d)
-        except OSError:
-            continue
-        dev = st.st_dev if dev is None else dev
-        if st.st_dev != dev or _is_link(d, st):
-            continue
+    """{folder: bytes} for every folder ≥ min_bytes under root, from one walk (no GNU du).
+
+    Never follows links or junctions; on Linux/macOS it also stays on one drive.
+    """
+    sizes = {}
+    try:
+        dev = os.lstat(root).st_dev
+    except OSError:
+        return {}
+
+    def walk(d):
         total = 0
-        for f in files:
+        try:
+            entries = list(os.scandir(d))
+        except OSError:
+            entries = []
+        for e in entries:
             try:
-                total += file_size(os.lstat(os.path.join(d, f)))
+                st = os.lstat(e.path)
             except OSError:
-                pass
-        total += sum(sizes.get(os.path.join(d, x), 0) for x in dirs)
+                continue
+            if stat.S_ISDIR(st.st_mode) and not _is_link(e.path, st):
+                if os.name == "posix" and st.st_dev != dev:
+                    continue
+                total += walk(e.path)
+            elif not stat.S_ISDIR(st.st_mode):
+                total += file_size(st)
         sizes[d] = total
+        return total
+
+    walk(root)
     return {p: n for p, n in sizes.items() if n >= min_bytes or p == root}
