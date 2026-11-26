@@ -24,7 +24,9 @@ a = Analysis(
     [str(ROOT / "packaging" / "windows" / "launch.py")],
     pathex=[str(CORE), str(HUB)],
     datas=datas,
-    hiddenimports=collect_submodules("superapp_core") + collect_submodules("superapp_hub"),
+    hiddenimports=sorted(set(collect_submodules("superapp_core") + collect_submodules("superapp_hub") + [
+        f"{pkg}.{f[:-3]}" for src, pkg in ((CORE, "superapp_core"), (HUB, "superapp_hub"))
+        for f in os.listdir(src / pkg) if f.endswith(".py") and f != "__init__.py"])),
     hooksconfig={"gi": {"icons": ["Adwaita"], "themes": ["Adwaita"], "languages": ["en_US"],
                         "module-versions": {"Gtk": "4.0", "Gdk": "4.0", "Adw": "1"}}},
     excludes=["tkinter"],
