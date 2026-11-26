@@ -101,9 +101,9 @@ def test_large_files_and_folder_sizes_walkers(core, tmp_path):
     big = write(home / "Videos" / "film.mkv", 3_000_000)
     write(home / "proj" / "node_modules" / "huge.bin", 3_000_000)          # skipped by the large-file scan
     found = core.large_files_py(str(home), 2_000_000)
-    assert [p for _s, _m, p in found] == [str(big)]
-    sizes = core.folder_sizes_py(str(home), 1_000_000)
-    assert sizes[str(home)] >= 6_000_000 and str(home / "Videos") in sizes
+    assert [os.path.normpath(p) for _s, _m, p in found] == [os.path.normpath(big)]
+    sizes = {os.path.normpath(k): v for k, v in core.folder_sizes_py(str(home), 1_000_000).items()}
+    assert sizes[os.path.normpath(home)] >= 6_000_000 and os.path.normpath(home / "Videos") in sizes
 
 
 def test_parent_walk_stops_at_drive_root(core):
