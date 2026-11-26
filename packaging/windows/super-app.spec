@@ -1,5 +1,6 @@
 # PyInstaller spec for the Windows build. Run from an MSYS2 UCRT64 shell: packaging/windows/build.sh
 # Plugins ship as plain folders next to the exe (they're loaded from disk, like user add-ons).
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -11,10 +12,11 @@ datas = [(str(HUB / "superapp_hub" / "assets"), "superapp_hub/assets")]
 for plugin in sorted((ROOT / "plugins").iterdir()):
     if not (plugin / "plugin.toml").is_file():
         continue
-    for f in plugin.rglob("*"):
-        rel = f.relative_to(plugin)
-        if f.is_file() and rel.parts[0] not in ("tests", "linux") and "__pycache__" not in rel.parts:
-            datas.append((str(f), str(Path("plugins") / plugin.name / rel.parent)))
+    for dirpath, dirnames, files in os.walk(plugin):
+        dirnames[:] = [d for d in dirnames if d not in ("tests", "linux", "__pycache__")]
+        rel = os.path.relpath(dirpath, plugin)        # MSYS2 mixes / and \ - relpath copes, relative_to doesn't
+        dest = os.path.normpath(os.path.join("plugins", plugin.name, rel))
+        datas += [(os.path.join(dirpath, f), dest) for f in files]
 
 a = Analysis(
     [str(ROOT / "packaging" / "windows" / "launch.py")],
